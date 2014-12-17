@@ -6,7 +6,7 @@
     :Section Constants
     :Field Public Shared TypeNames←'I1' 'I2' 'I4' (,'F')
     :Field Public Shared TypeNums←83 163 323 645
-    :Field Public Shared Version←'0.0.0'
+    :Field Public Shared Version←'0.1.0'
     :EndSection ⍝ Constants
 
     :Section Instance Fields

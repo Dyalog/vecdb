@@ -1,12 +1,12 @@
 ﻿:Class vecdb
-⍝ Vector database v0.0.0
+⍝ Vector database v0.1.1
 
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
     :Field Public Shared TypeNames←'I1' 'I2' 'I4' (,'F')
     :Field Public Shared TypeNums←83 163 323 645
-    :Field Public Shared Version←'0.1.0'
+    :Field Public Shared Version←'0.1.1'
     :EndSection ⍝ Constants
 
     :Section Instance Fields
@@ -21,6 +21,9 @@
     :Field Public noFiles←0             ⍝ in-memory database?
     :Field Public Open←0                ⍝ Not yet open
 
+    :field _Columns←⍬
+    :field _Types←⍬
+
     state←'Name' 'BlockSize'
     :EndSection ⍝ Instance Fields
 
@@ -28,14 +31,14 @@
     :property Columns
     :access public
         ∇ r←get
-          r←Data.n
+          r←_Columns
         ∇
     :endproperty
 
     :property Types
     :access public
         ∇ r←get
-          r←Data.t
+          r←_Types
         ∇
     :endproperty
     :endsection
@@ -60,12 +63,13 @@
       ⍎'(',(⍕1⊃props),')←2⊃props'
      
       Shards←{
-          r←⎕NS¨(≢⍵)⍴⊂''
-          {r}r{
-              ⍺⍎(⍕,¨⊃⍵),'←2⊃⍵'
+          (⎕NS¨(≢⍵)⍴⊂''){
+              ⍺{⍺}⍺⍎(⍕,¨⊃⍵),'←2⊃⍵'
           }¨⍵
       }¨shards
       Data←⊃Shards
+      _Columns←Data.n
+      _Types←Data.t
      
       (Folder Open Size)←folder 1(NumBlocks×BlockSize)
       MakeMaps
@@ -73,7 +77,7 @@
 
     ∇ MakeMaps;s;i;types;d;t
     ⍝ [Re]make all maps
-      types←TypeNums[TypeNames⍳Data.t]
+      types←TypeNums[TypeNames⍳Types]
      
       :For s :In Shards       ⍝ But we only support 1
           :For d t :InEach s types
@@ -123,6 +127,8 @@
      
       (Name Count)←name(⊃length) ⍝ Update real props
       Data←types{n←⍵ ⋄ t←⍺ ⋄ ⎕NS,¨'tn'}¨columns
+      _Columns←Data.n
+      _Types←Data.t
      
       ⍝ Harwired to only write one Shard
       :For s :In ⍳≢Shards←,⊂Data
@@ -145,7 +151,7 @@
     ∇ ExtendShard(folder s rcds data mode);i;type;file;tn
     ⍝ Extend a
       :For i :In ⍳⍴Data
-          type←(TypeNames⍳⊂Data[i].t)⊃TypeNums
+          type←(TypeNames⍳Types[i])⊃TypeNums
           Data[i].f←(⍕i),'_',(⍕s),'.vector'
           file←folder,Data[i].f
           :Select mode

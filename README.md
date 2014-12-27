@@ -1,5 +1,6 @@
 # README #
 
+`vecdb`
 Current version: 0.1.1
 
 ### What is this repository for? ###
@@ -9,11 +10,15 @@ Current version: 0.1.1
 
 Clone/Fork the repo, and
 
+```apl
     ]load vecdb.dyalog
+```
 
 ### Tests ###
+```apl
     ]load TestVecdb.dyalog
     #.TestVecdb.Run
+```
 
 ### Contribution guidelines ###
 

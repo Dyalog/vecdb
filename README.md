@@ -3,7 +3,7 @@
 Current version: 0.1.1
 
 ### What is this repository for? ###
-`vecdb` is a column-based DB for Dyalog APL.
+`vecdb` is a simple "columnar database" based on memory-mapped files, written in and for Dyalog APL.
 
 ### How do I get set up? ###
 

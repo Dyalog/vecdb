@@ -1,12 +1,12 @@
 ﻿:Class vecdb
-⍝ Vector database v0.1.1
+⍝ Vector database v0.1.2
 
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared TypeNames←'I1' 'I2' 'I4' (,'F')
-    :Field Public Shared TypeNums←83 163 323 645
-    :Field Public Shared Version←'0.1.1'
+    :Field Public Shared TypeNames←'I1' 'I2' 'I4',,¨'FB'
+    :Field Public Shared TypeNums←83 163 323 645 11
+    :Field Public Shared Version←'0.1.2'
     :EndSection ⍝ Constants
 
     :Section Instance Fields
@@ -14,7 +14,7 @@
     :Field Public Folder←''             ⍝ Where is it
     :Field Public Data←0⍴⎕ns ''         ⍝ One element per column: .v (value) .n (name) .t (typename)
     :Field Public Count←0               ⍝ Number of records
-    :Field Public BlockSize←100000      ⍝ Small while we test
+    :Field Public BlockSize←100000      ⍝ Small while we test (must be multiple of 8)
     :Field Public NumBlocks←1           ⍝ We start with one block
     :Field Public Size←0
     :Field Public Shards←0⍴⊂0⍴⎕NS ''    ⍝ Shards (not supported in v0.0)
@@ -121,6 +121,7 @@
      
       :If 0=≢data ⋄ data←(≢columns)⍴⊂⍬ ⋄ :EndIf ⍝ Default data is all zeros
       ProcessOptions options ⍝ Sets global fields
+      'Block size must be a multiple of 8'⎕SIGNAL(0≠8|BlockSize)/11
      
       'Data lengths not all the same'⎕SIGNAL(1≠≢length←∪≢¨data)/11
       Size←BlockSize×NumBlocks←1⌈⌈length÷BlockSize ⍝ At least one block

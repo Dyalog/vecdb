@@ -15,19 +15,19 @@ The current version supports the following data types:
 
 Database modification can only be done using Append and Update operations (no Delete).
 
-The Query function takes a constraint in the form of a list of (column_name values) pair. Each one represents the relation which can be expressed in APL as (column_data∊values); if there is more than one constraint they are AND-ed together. Query also accepts a list of column names to be retrieve for records which match the constraint; if no columns are requested, row indices are returned.
+The `Query` function takes a constraint in the form of a list of (column_name values) pair. Each one represents the relation which can be expressed in APL as (column_data∊values); if there is more than one constraint they are AND-ed together. Query also accepts a list of column names to be retrieve for records which match the constraint; if no columns are requested, row indices are returned.
 
-A Read function takes a list of column names and row indices and returns the requested data.
+A `Read` function takes a list of column names and row indices and returns the requested data.
 
 ### Goals
 
-The intention is to extend vecdb with the following functionality. Much of this is still half-baked, discussion is welcome. owever, the one application that is being built upon vecdb and is driving the initial development requires the following items.
+The intention is to extend `vecdb` with the following functionality. Much of this is still half-baked, discussion is welcome. owever, the one application that is being built upon `vecdb` and is driving the initial development requires the following items.
 
 1. A boolean data type
 1. A character data type, internally represented using an table of unique values plus an index into it. The data type of the indices should depend on the size of the table, starting with 1-byte integers.
 1. "Sharding": This idea needs to be developed, but the current thinking is that one or more key fields are identified, and a function is defined to map distinct key tuples to a "shard". A list of folder names points to the folders that will contain the mapped columns for each shard. The result of Query (and argument to Read) will become a 2-row (2-column?) matrix containing shard numbers and record offsets within the shard.
 1. Parallel database queries: For a sharded database, an isolate process will be spun up to perform queries and updates on one or more shards (each shard only being handles by a single process).
-1. A front-end server will allow RESTful database access (this item is perhaps optional).
+1. A front-end server will allow RESTful database access (this item is perhaps optional). As it stands, `vecdb` is effectively an embedded database engine which does not support data sharing between processes on the same or on separate machines.
 
 ### Longer Term (Dreams)
 

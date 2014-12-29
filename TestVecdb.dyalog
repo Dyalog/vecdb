@@ -1,6 +1,6 @@
 :Namespace TestVecdb
 
-    ⍝ Call TestVecdb.RunAll to fun a full system test
+    ⍝ Call TestVecdb.RunAll to run a full system test
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")
     

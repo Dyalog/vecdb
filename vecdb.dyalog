@@ -1,5 +1,5 @@
 ﻿:Class vecdb
-⍝ Vector database v0.1.1
+⍝ Vector database v0.1.2
 
     (⎕IO ⎕ML)←1 1
 

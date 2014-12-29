@@ -1,7 +1,17 @@
 ﻿:Namespace TestVecdb
 
+    ⍝ Call TestVecdb.RunAll to fun a full system test
+	⍝   assumes vecdb is loaded in #.vecdb
+	⍝   returns memory usage statistics (result of "memstats 0")
+	
     (⎕IO ⎕ML)←1 1    
-    LOG←1       
+    LOG←1  	
+	
+	∇ z←RunAll;path
+      ⎕FUNTIE ⎕FNUMS ⋄ ⎕NUNTIE ⎕NNUMS
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}⎕WSID
+      ⎕←Basic
+    ∇
     
     ∇ x←output x
       :If LOG ⋄ ⍞←x ⋄ :EndIf
@@ -30,12 +40,6 @@
           o←output(⍕⎕AI[3]-t),'ms',⎕UCS 10
           z
       }
-    
-    ∇ z←Run;path
-      ⎕FUNTIE ⎕FNUMS ⋄ ⎕NUNTIE ⎕NNUMS
-      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}⎕WSID
-      ⎕←Basic
-    ∇
     
     ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params
      ⍝ Create and delete some tables

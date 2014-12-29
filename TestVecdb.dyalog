@@ -1,15 +1,18 @@
 ﻿:Namespace TestVecdb
 
     ⍝ Call TestVecdb.RunAll to fun a full system test
-	⍝   assumes vecdb is loaded in #.vecdb
-	⍝   returns memory usage statistics (result of "memstats 0")
-	
+    ⍝   assumes vecdb is loaded in #.vecdb
+    ⍝   returns memory usage statistics (result of "memstats 0")
+    
     (⎕IO ⎕ML)←1 1    
-    LOG←1  	
-	
-	∇ z←RunAll;path
+    LOG←1      
+    
+    ∇ z←RunAll;path;source
       ⎕FUNTIE ⎕FNUMS ⋄ ⎕NUNTIE ⎕NNUMS
-      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}⎕WSID
+      :Trap 6 ⋄ source←SALT_Data.SourceFile
+      :Else ⋄ source←⎕WSID
+      :EndTrap
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
       ⎕←Basic
     ∇
     
@@ -41,24 +44,22 @@
           z
       }
     
-    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params
+    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t
      ⍝ Create and delete some tables
      
-      memstats 1 ⍝ Clear memory statistics
+      numrecs←5000000 ⍝ 5 million records
+      memstats 1      ⍝ Clear memory statistics
      
       ⎕←'Creating: ',folder←path,'\',(name←'testdb1'),'\'
       :Trap 11 ⋄ {}(⎕NEW #.vecdb(,⊂folder)).Erase ⋄ :EndTrap
      
       columns←'col_'∘,¨types←#.vecdb.TypeNames
-      assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4'(,'F') ⍝ Types have been added?
+      assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FB' ⍝ Types have been added?
+      range←2*¯1+8×1 2 4 6 0.25
+      data←numrecs⍴¨¯1+⍳¨numrecs⌊range
+      data←data×0.1*'F'=⊃¨types ⍝ Make float values where necessary
      
-      numrecs←5000000 ⍝ 5 million records
-      data←numrecs⍴¨⍳¨numrecs⌊¯1+2*¯1+8×(1 2 4 6)[tnms⍳types]
-      data←data×0.1*'F'∊¨types ⍝ Make float values where necessary
-     
-      :If LOG
-          ⎕←'Size of input data: ',fmtnum ⎕SIZE'data'
-      :EndIf
+      :If LOG ⋄ ⎕←'Size of input data: ',fmtnum ⎕SIZE'data' ⋄ :EndIf
      
       recs←numrecs(⌊÷)2
       (options←⎕NS'').BlockSize←numrecs(⌊×)0.6 ⍝ Provoke block overflow
@@ -97,11 +98,16 @@
      
       ⍝ Test vecdb.Replace
       indices←db.Query where ⍬
+      rcols←columns[rcoli←types⍳'I2'(,'B')]
       TEST←'Updating ',(fmtnum≢indices),' records'
-      assert 0=db.Update time indices(2⊃columns)(-(2⊃data)[indices]) ⍝ Update with 0-data
-      expect←2⊃data ⋄ expect[indices]←-expect[indices]
-      TEST←'Reading one column for all ',(⍕numrecs),' records'
-      assert expect≡⊃db.Read time(⍳numrecs)(2⊃columns)
+      newvals←0 1-(⊂indices)∘⌷¨data[rcoli] ⍝ Update with 0-data or ~data
+      assert 0=db.Update time indices rcols newvals
+      expect←data[rcoli]
+      :For i :In ⍳⍴rcoli
+          t←i⊃expect ⋄ t[indices]←i⊃newvals ⋄ (i⊃expect)←t
+      :EndFor
+      TEST←'Reading two column for all ',(⍕numrecs),' records'
+      assert expect≡db.Read time(⍳numrecs)rcols
      
       :If LOG
           ⎕←'Basic tests: memstats before db.Erase:'

@@ -1,4 +1,4 @@
-﻿:Namespace TestVecdb
+:Namespace TestVecdb
 
     ⍝ Call TestVecdb.RunAll to fun a full system test
     ⍝   assumes vecdb is loaded in #.vecdb

@@ -1,7 +1,7 @@
 # README #
 
 `vecdb`
-Current version: 0.1.2
+Current version: 0.1.3
 
 ### What is this repository for? ###
 `vecdb` is a simple "columnar database": each column in the database is stored in a single memory-mapped files. It is written in and for Dyalog APL as a tool on which to base new applications which need to generate and query very large amounts of data, but do not need a "transactional" storage mechanism.
@@ -13,7 +13,7 @@ The current version supports the following data types:
 * 1, 2 and 4 byte integers
 * 8-byte IEEE double-precision floats
 * Boolean
-* Char (via an "symbol table" of up to 32,767 unique strings indexed by 2-byte integers)
+* Char (via a "symbol table" of up to 32,767 unique strings indexed by 2-byte integers)
 
 Database modification can only be done using Append and Update operations (no Delete).
 

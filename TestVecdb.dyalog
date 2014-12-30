@@ -1,4 +1,4 @@
-﻿:Namespace TestVecdb
+:Namespace TestVecdb
 
     ⍝ Updated to version 0.1.3 with char support
     ⍝ Call TestVecdb.RunAll to fun a full system test 

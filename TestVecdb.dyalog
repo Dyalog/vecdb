@@ -1,7 +1,7 @@
 :Namespace TestVecdb
 
     ⍝ Updated to version 0.1.3 with char support
-    ⍝ Call TestVecdb.RunAll to fun a full system test 
+    ⍝ Call TestVecdb.RunAll to run a full system test 
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")
     

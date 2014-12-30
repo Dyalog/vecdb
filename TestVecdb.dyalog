@@ -1,6 +1,7 @@
 ﻿:Namespace TestVecdb
 
-    ⍝ Call TestVecdb.RunAll to fun a full system test
+    ⍝ Updated to version 0.1.3 with char support
+    ⍝ Call TestVecdb.RunAll to fun a full system test 
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")
     
@@ -44,7 +45,7 @@
           z
       }
     
-    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t
+    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals
      ⍝ Create and delete some tables
      
       numrecs←5000000 ⍝ 5 million records
@@ -54,10 +55,11 @@
       :Trap 11 ⋄ {}(⎕NEW #.vecdb(,⊂folder)).Erase ⋄ :EndTrap
      
       columns←'col_'∘,¨types←#.vecdb.TypeNames
-      assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FB' ⍝ Types have been added?
+      assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FBC' ⍝ Types have been added?
       range←2*¯1+8×1 2 4 6 0.25
       data←numrecs⍴¨¯1+⍳¨numrecs⌊range
-      data←data×0.1*'F'=⊃¨types ⍝ Make float values where necessary
+      data←data×0.1*'F'=⊃¨(≢data)↑types ⍝ Make float values where necessary
+      data←data,⊂numrecs⍴{1↓¨(⍵=⊃⍵)⊂⍵}'/zero/one/two/three/four/five/six/seven/eight/nine/ten/eleven/one dozen/thirteen/fourteen/fifteen'
      
       :If LOG ⋄ ⎕←'Size of input data: ',fmtnum ⎕SIZE'data' ⋄ :EndIf
      
@@ -91,16 +93,17 @@
       TEST←'Single expression query'
       assert expect≡db.Query time where select
      
-      where←where((2⊃columns)(1 2 3))         ⍝ Add 2nd filter
-      expect←⌽(⊃∧/(2↑data)∊¨⊂1 2 3)∘/¨data    ⍝ Reduced expectations
+      where←where((6⊃columns)(vals←'one' 'two' 'three' 'seventy')) ⍝ Add filter on char type
+      expect←⌽(⊃∧/data[1 6]∊¨(1 2 3)vals)∘/¨data                 ⍝ Reduced expectations
       TEST←'Two expression query'
       assert expect≡db.Query time where select
      
       ⍝ Test vecdb.Replace
       indices←db.Query where ⍬
-      rcols←columns[rcoli←types⍳'I2'(,'B')]
+      rcols←columns[rcoli←types⍳,¨'I2' 'B' 'C']
       TEST←'Updating ',(fmtnum≢indices),' records'
-      newvals←0 1-(⊂indices)∘⌷¨data[rcoli] ⍝ Update with 0-data or ~data
+      newvals←0 1-(⊂indices)∘⌷¨data[2↑rcoli] ⍝ Update with 0-data or ~data
+      newvals,←⊂(≢indices)⍴⊂'changed'        ⍝ And new char values
       assert 0=db.Update time indices rcols newvals
       expect←data[rcoli]
       :For i :In ⍳⍴rcoli

@@ -13,6 +13,7 @@ The current version supports the following data types:
 * 1, 2 and 4 byte integers
 * 8-byte IEEE double-precision floats
 * Boolean
+* Char (via an "symbol table" of up to 32,767 unique strings indexed by 2-byte integers)
 
 Database modification can only be done using Append and Update operations (no Delete).
 
@@ -24,7 +25,6 @@ A `Read` function takes a list of column names and row indices and returns the r
 
 The intention is to extend `vecdb` with the following functionality. Much of this is still half-baked, discussion is welcome. owever, the one application that is being built upon `vecdb` and is driving the initial development requires the following items.
 
-1. A character data type, internally represented using an table of unique values plus an index into it. The data type of the indices should depend on the size of the table, starting with 1-byte integers.
 1. "Sharding": This idea needs to be developed, but the current thinking is that one or more key fields are identified, and a function is defined to map distinct key tuples to a "shard". A list of folder names points to the folders that will contain the mapped columns for each shard. The result of Query (and argument to Read) will become a 2-row (2-column?) matrix containing shard numbers and record offsets within the shard.
 1. Parallel database queries: For a sharded database, an isolate process will be spun up to perform queries and updates on one or more shards (each shard only being handles by a single process).
 1. A front-end server will allow RESTful database access (this item is perhaps optional). As it stands, `vecdb` is effectively an embedded database engine which does not support data sharing between processes on the same or on separate machines.
@@ -33,6 +33,7 @@ The intention is to extend `vecdb` with the following functionality. Much of thi
 
 There are ideas to add support for timeseries and versioning. This would include:
 
+1. Add a single-byte indexed Char type (perhaps denoted lowercase "c"), indexing up to 127 unique strings
 1. Support for deleting records
 2. Performing all updates without overwriting data, and tagging old data with the timestamps defining its lifetime, allowing efficient queries on the database as it appeared at any given time in the past.
 3. Built-in support for the computation of aggregate values as part of the parallel query mechanism, based on timeseries or other key values.

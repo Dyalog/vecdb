@@ -1,11 +1,11 @@
 ﻿:Class vecdb
-⍝ Vector database v0.1.2
+⍝ Vector database v0.1.3
 
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared TypeNames←'I1' 'I2' 'I4',,¨'FB'
-    :Field Public Shared TypeNums←83 163 323 645 11
+    :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
+    :Field Public Shared TypeNums←83 163 323 645 11 163
     :Field Public Shared Version←'0.1.2'
     :EndSection ⍝ Constants
 
@@ -57,7 +57,7 @@
           ('Unable to open ',file)⎕SIGNAL 11
       :EndTrap
       (Count NumBlocks)←⎕FREAD tn 3
-      props←⎕FREAD tn 4 ⍝ database properties
+      props←⎕FREAD tn 4   ⍝ database properties
       shards←⎕FREAD tn,5
       ⎕FUNTIE tn
       ⍎'(',(⍕1⊃props),')←2⊃props'
@@ -75,13 +75,20 @@
       MakeMaps
     ∇
 
-    ∇ MakeMaps;s;i;types;d;t
+    ∇ MakeMaps;s;i;types;d;t;T
     ⍝ [Re]make all maps
       types←TypeNums[TypeNames⍳Types]
+      ⍝ CCC need to pick up type for C columns
      
       :For s :In Shards       ⍝ But we only support 1
-          :For d t :InEach s types
-              d.v←(t,¯1)⎕MAP(Folder,d.f)'W'
+          :For d t T :InEach s types Types
+              :If 'C'=⊃T      ⍝ CHAR
+                  d.s←GetSymbols d.f,'.symbol'
+                  d.(SymbolIndex←s∘⍳)
+                 ⍝ later optimise type? 3+80×⌈8⍟⍴d.s ⍝ Compute type required for indices
+              :EndIf
+              d.v←(t,¯1)⎕MAP(d.f,'.vector')'W'
+              :If Size≠≢d.v ⋄ ∘ ⋄ :EndIf ⍝ // File damaged?
           :EndFor
       :EndFor
     ∇
@@ -127,7 +134,7 @@
       Size←BlockSize×NumBlocks←1⌈⌈length÷BlockSize ⍝ At least one block
      
       (Name Count)←name(⊃length) ⍝ Update real props
-      Data←types{n←⍵ ⋄ t←⍺ ⋄ ⎕NS,¨'tn'}¨columns
+      Data←types{n←⍵ ⋄ t←⍺ ⋄ ⎕NS⍪'tn'}¨columns
       _Columns←Data.n
       _Types←Data.t
      
@@ -149,16 +156,24 @@
       make1,⊂folder ⍝ now open it properly
     ∇
 
-    ∇ ExtendShard(folder s rcds data mode);i;type;file;tn
-    ⍝ Extend a
+    ∇ ExtendShard(folder s rcds data mode);i;type;file;tn;Type;char;tns;sym;m;ix;fp
+    ⍝ Extend or (if mode≡'create') Create a Shard
+     
       :For i :In ⍳⍴Data
-          type←(TypeNames⍳Types[i])⊃TypeNums
-          Data[i].f←(⍕i),'_',(⍕s),'.vector'
-          file←folder,Data[i].f
+          type←(TypeNames⍳Type←Types[i])⊃TypeNums
+          char←'C'=⊃⊃Type
+          Data[i].f←file←folder,(fp←(⍕i),'_',⍕s)
           :Select mode
-          :Case 'create' ⋄ tn←file ⎕NCREATE 0
-          :Case 'extend' ⋄ tn←file ⎕NTIE 0
+          :Case 'create' ⋄ tn←(file,'.vector')⎕NCREATE 0
+              :If char
+                  ⎕NUNTIE tns←(file,'.symbol')⎕NCREATE 0
+                  Data[i].s←⍬
+                  Data[i].SymbolIndex←⍬∘⍳
+                  data[i]←⊂Data[i]SymbolUpdate i⊃data
+              :EndIf
+          :Case 'extend' ⋄ tn←(file,'.vector')⎕NTIE 0
           :EndSelect
+     
           (rcds↑i⊃data)⎕NAPPEND tn,type
           ⎕NUNTIE tn
       :EndFor
@@ -195,13 +210,16 @@
     ∇ r←Query(where cols);col;value;ix;j
       :Access Public
      
-      :If (2=≢where)∧2=|≡where ⍝ single constraint
+      :If (2=≢where)∧where[1]∊Columns ⍝ single constraint?
           where←,⊂where
       :EndIf
      
       ix←⎕NULL
       :For (col value) :In where ⍝ AND them all together
           j←Columns⍳⊂col
+          :If 'C'=⊃j⊃Types ⍝ Char
+              value←Data[j].SymbolIndex value
+          :EndIf
           ('Invalid column name(s): ',⍕col)⎕SIGNAL((⊂col)∊Columns)↓11
           :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(Count↑Data[j].v)∊value
           :Else ⋄ ix/⍨←Data[j].v[ix]∊value
@@ -215,13 +233,16 @@
       :EndIf
     ∇
 
-    ∇ r←Read(indices cols)
-      ⍝ Read specified insices of named columns
+    ∇ r←Read(indices cols);char;m;num;cix
+      ⍝ Read specified indices of named columns
       :Access Public
      
       :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple comlumn name
       ⎕SIGNAL/ValidateColumns cols
-      r←(Data[Columns⍳cols]).{v[⍵]}⊂indices
+      r←(Data[cix←Columns⍳cols]).{v[⍵]}⊂indices
+      :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Types[cix]
+          r[char]←Data[cix[char]].{s[⍵]}r[char]
+      :EndIf
     ∇
 
     ∇ r←ValidateColumns cols;bad
@@ -233,21 +254,24 @@
       :EndIf
     ∇
 
-    ∇ r←Append(cols data);length;canupdate;shards;s;alldata;growth;tn
+    ∇ r←Append(cols data);length;canupdate;shards;s;alldata;growth;tn;cix
       :Access Public
      
       'Data lengths not all the same'⎕SIGNAL(1≠≢length←∪≢¨data)/11
       'Col and Data counts not the same'⎕SIGNAL((≢cols)≠≢data)/11
       ⎕SIGNAL/ValidateColumns cols
      
+      cix←Columns⍳cols
+      data←Data[cix]IndexSymbols data
+     
       :If 0≠canupdate←length⌊Size-Count
-          (⊂Count+⍳canupdate)(Data[Columns⍳cols]).{
+          (⊂Count+⍳canupdate)(Data[cix]).{
               v[⍺]←⍵
           }canupdate↑¨data
       :EndIf
      
       :If length>canupdate    ⍝ We need to extend the file
-          alldata←(≢Columns)⍴⊂⍬ ⋄ alldata[Columns⍳cols]←canupdate↓¨data
+          alldata←(≢Columns)⍴⊂⍬ ⋄ alldata[cix]←canupdate↓¨data
           growth←BlockSize×(length-canupdate)(⌈÷)BlockSize ⍝ How many records to add
           shards←≢Shards
           Shards.⎕EX'v'
@@ -256,9 +280,9 @@
               ExtendShard Folder s growth alldata'extend'
           :EndFor
      
-          MakeMaps            ⍝ remake all the maps
           Size+←growth
           NumBlocks←Size÷BlockSize
+          MakeMaps            ⍝ remake all the maps
       :EndIf
       Count+←length
       tn←(Folder,'meta.vecdb')⎕FSTIE 0
@@ -267,18 +291,22 @@
       r←0
     ∇
 
-    ∇ {r}←Update(indices cols data)
+    ∇ {r}←Update(indices cols data);cix
       :Access Public
      
       :If 1=≡cols ⋄ (cols data)←,∘⊂¨cols data ⋄ :EndIf ⍝ Simple col name
       ⎕SIGNAL/ValidateColumns cols
-      (⊂indices)(Data[Columns⍳cols]).{
+     
+      cix←Columns⍳cols
+      data←Data[cix]IndexSymbols data
+     
+      (⊂indices)(Data[cix]).{
           v[⍺]←⍵
       }data
       r←0
     ∇
 
-    ∇ r←Erase;file;s;i;f;shards
+    ∇ r←Erase;file;s;f;shards;i
       :Access Public
       ⍝ /// needs error trapping
      
@@ -288,44 +316,69 @@
           shards←≢Shards
           {}Close
           :For Data :In Shards
-              :For f :In Data.f
-                  {⍵ ⎕NERASE ⍵ ⎕NTIE 0}Folder,f
+              :For i :In ⍳≢Data.f
+                  (f t)←Data[i].(f t)
+                  {⍵ ⎕NERASE ⍵ ⎕NTIE 0}f,'.vector'
+                  :If 'C'=⊃t ⍝ Is there a symbol file to erase?
+                      {⍵ ⎕NERASE ⍵ ⎕NTIE 0}f,'.symbol'
+                  :EndIf
               :EndFor
           :EndFor
           file ⎕NERASE file ⎕NTIE 0
-          ⍝ RmDir Folder ⍝ /// This fails, RmDir needs to be fixed
+          RmDir Folder
           r←0
       :Else
           ('Not a vector db: ',Folder)⎕SIGNAL 2
       :EndIf
     ∇
+        
+    ∇ ix←ns SymbolUpdate values;m
+      ⍝ Convert values to symbol indices, and update the file if necessary
+     
+      :If ∨/m←(≢ns.s)<ix←ns.SymbolIndex values   ⍝ new strings found
+          ns.s,←∪m/values             ⍝ Update in-memory symbol table
+          ns.s PutSymbols ns.f,'.symbol' ⍝ ... update the symbol file
+          ns.(SymbolIndex←s∘⍳)        ⍝ ... and the hash lookup function
+          ix←ns.SymbolIndex values    ⍝ ... and use the function
+      :EndIf
+    ∇
+    
+    ∇ data←Data IndexSymbols data;char
+    ⍝ Convert all char columns to indices
+     
+      :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Data.t
+          data[char]←Data[char]SymbolUpdate¨data[char]
+      :EndIf
+     
+    ∇
+        
+    ∇ r←GetSymbols file;tn;s
+    ⍝ Read and deserialise symbol table from native file
+     
+      tn←file ⎕NTIE 0 ⋄ s←⎕NREAD tn 83,⎕NSIZE tn ⋄ ⎕NUNTIE tn
+      :Trap 0 ⋄ r←0(220⌶)s ⍝ Deseralise
+      :Else ⋄ ∘ ⋄ :EndTrap ⍝ Symbol table damaged :-(
+    ∇
+    
+    ∇ r←symbols PutSymbols file;tn
+    ⍝ Serialise and write symbol table to native file
+     
+      'SYMBOL TABLE FULL'⎕SIGNAL(32767<≢symbols)/11
+     
+      :Trap 22
+          tn←file ⎕NTIE 0 ⋄ 0 ⎕NRESIZE tn
+      :Else ⋄ tn←file ⎕NCREATE 0 ⋄ :EndTrap
+      (1(220⌶)symbols)⎕NAPPEND tn 83 ⍝ Serialise and append
+      ⎕NUNTIE tn
+    ∇
 
     :Section Files
-⍝ /// These functions should be really be :Included from Files
+    ⍝ /// These functions should be really be :Included from Files
 
-    ∇ ok←Exists path;FindFirstFileX;FindNextFileX;FindClose;FileTimeToLocalFileTime;FileTimeToSystemTime;GetLastError
-      _FindDefine
-      ok←0≢⊃_FindFirstFile path
-    ∇
-
-    ∇ _FindDefine;WIN32_FIND_DATA
-      WIN32_FIND_DATA←'{I4 {I4 I4} {I4 I4} {I4 I4} {U4 U4} {I4 I4} T[260] T[14]}'
-      'FindFirstFileX'⎕NA'P kernel32.C32|FindFirstFile* <0T >',WIN32_FIND_DATA
-      'FindNextFileX'⎕NA'U4 kernel32.C32|FindNextFile* P >',WIN32_FIND_DATA
-      ⎕NA'kernel32.C32|FindClose P'
-      ⎕NA'I4 kernel32.C32|FileTimeToLocalFileTime <{I4 I4} >{I4 I4}'
-      ⎕NA'I4 kernel32.C32|FileTimeToSystemTime <{I4 I4} >{I2 I2 I2 I2 I2 I2 I2 I2}'
-      ⎕NA'I4 kernel32.C32|GetLastError'
-    ∇
-
-    ∇ rslt←_FindFirstFile name;⎕IO
-      rslt←FindFirstFileX name(⎕IO←0)
-      :If 1∊(¯1+2*32 64)=0⊃rslt       ⍝ INVALID_HANDLE_VALUE 32 or 64
-          rslt←0 GetLastError
-      :Else
-          (1 6⊃rslt)_FindTrim←0        ⍝ shorten the file name at the null delimiter
-          (1 7⊃rslt)_FindTrim←0        ⍝ and for the alternate name
-      :EndIf
+    ∇ ok←Exists path;GFA
+    ⍝ Is the argument the name of an existing file or folder?
+      'GFA'⎕NA'U4 kernel32.C32|GetFileAttributes* <0T '
+      ok←(¯1+2*32)≢GFA⊂path
     ∇
 
     ∇ MkDir path;CreateDirectory;GetLastError;err

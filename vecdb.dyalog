@@ -11,7 +11,6 @@
     :Section Instance Fields
     :Field Public Name←''
     :Field Public Folder←''             ⍝ Where is it
-    :Field Public Data←0⍴⎕ns ''         ⍝ One element per column: .v (value) .n (name) .t (typename)
     :Field Public Count←0               ⍝ Number of records
     :Field Public BlockSize←100000      ⍝ Small while we test (must be multiple of 8)
     :Field Public NumBlocks←1           ⍝ We start with one block
@@ -44,13 +43,13 @@
     :endproperty
     :endsection
 
-    ∇ Open(folder);tn;file;props;shards;n;s
+    ∇ Open(folder);tn;file;props;shards;n;s;i
     ⍝ Open an existing database
      
       :Implements constructor
       :Access Public
      
-      folder←addslash folder
+      folder←AddSlash folder
      
       :Trap 0 ⋄ tn←(file←folder,'meta.vecdb')⎕FSTIE 0
       :Else ⋄ ('Unable to open ',file)⎕SIGNAL 11
@@ -63,31 +62,35 @@
       s←≢ShardFolders
      
       Shards←⎕NS¨¨s⍴⊂n⍴⊂''
-      Shards.n←s⍴⊂_Columns                ⍝ Column Names
-      Shards.t←s⍴⊂_Types                  ⍝ Types
-      Shards.f←(n/ShardFolders),¨s⍴⊂⍕¨⍳n  ⍝ File names (without .vector)
+      Shards.name←s⍴⊂_Columns                ⍝ Column Names
+      Shards.type←s⍴⊂_Types                  ⍝ Types
+      Shards.file←(n/¨⊂¨ShardFolders),¨¨(,∘'.vector')¨¨s⍴⊂(⍕¨⍳n) ⍝ Vector file names
      
       :If 0≠⍴ShardFn                      ⍝ Define shard calculation function
           findshard←⍎ShardFn
       :EndIf
      
+      symbols←⎕NS¨n⍴⊂''
+      :For i :In {⍵/⍳⍴⍵}'C'=⊃¨_Types        ⍝ Read symbol files for CHAR fields
+          col←i⊃symbols
+          col.file←folder,(⍕i),'.symbol'    ⍝ symbol file name in main folder
+          col.symbol←GetSymbols col.file    ⍝ Read symbols
+          col.(SymbolIndex←symbol∘⍳)        ⍝ Create lookup function
+      :EndFor
+     
       isOpen←1
       MakeMaps
     ∇
 
-    ∇ MakeMaps;s;i;types;T;ns;dr
+    ∇ MakeMaps;s;i;types;T;ns;dr;col
     ⍝ [Re]make all maps
       types←TypeNums[TypeNames⍳Types]
+      symbols←⎕NS¨(≢_Columns)⍴⊂⍬
      
       :For s :In Shards
           s.count←645 1 ⎕MAP(ns.f,'counters.vecdb')'W' ⍝ Map record counter
-          :For ns :In s
-              :If 'C'=⊃ns.t      ⍝ CHAR
-                  ns.symbol←GetSymbols d.f,'.symbol'
-                  ns.(SymbolIndex←s∘⍳)
-                 ⍝ later optimise type? 3+80×⌈8⍟⍴d.s ⍝ Compute type required for indices
-              :EndIf
-              ns.vector←(dr,¯1)⎕MAP(ns.f,'.vector')'W'
+          :For col :In s
+              col.vector←(dr,¯1)⎕MAP col.file'W'
           :EndFor
      
           :If 1≠⍴sizes←∪s.(≢vector) ⍝ mapped vectors have different lengths
@@ -109,7 +112,7 @@
       make6(name folder columns types options'') ⍝ No data or option
     ∇
 
-    ∇ make6(name folder columns types options data);i;s;offset;file;tn;type;length
+    ∇ make6(name folder columns types options data);i;s;offset;file;tn;type;length;col;size;n;dr;f
       :Implements constructor
       :Access Public
     ⍝ Create a new database
@@ -138,16 +141,37 @@
       ShardFolders,←(0=⍴ShardFolders)/⊂folder
      
       'Data lengths not all the same'⎕SIGNAL(1≠≢length←∪≢¨data)/11
-      Size←BlockSize×NumBlocks←1⌈⌈length÷BlockSize ⍝ At least one block
      
-      (Name Count)←name(⊃length) ⍝ Update real props
-      Data←types{n←⍵ ⋄ t←⍺ ⋄ ⎕NS⍪'tn'}¨columns
-      _Columns←Data.n
-      _Types←Data.t
+      (Name _Columns _Types)←name columns types ⍝ Update real fields
      
-      ⍝ Harwired to only write one Shard
-      :For s :In ⍳≢Shards←,⊂Data
-          ExtendShard folder s Size data'create'
+      symbols←⎕NS¨(≢_Columns)⍴⊂''
+      :For i :In {⍵/⍳⍴⍵}'C'=⊃¨_Types        ⍝ Create symbol files for CHAR fields
+          col←i⊃symbols
+          col.symbol←∪i⊃data                ⍝ Unique symbols in input data
+          col.file←folder,(⍕i),'.symbol'    ⍝ symbol file name in main folder
+          col.symbol PutSymbols col.file    ⍝ Read symbols
+          col.(SymbolIndex←symbol∘⍳)        ⍝ Create lookup function
+          (i⊃data)←col.SymbolIndex i⊃data   ⍝ Convert indices
+      :EndFor
+     
+      :If 1≠≢ShardFolders ⋄ ∘ ⋄ :EndIf ⍝ ↓↓↓ Code below only works with one shard!
+     
+      :For f :In ⍳≢ShardFolders
+          :If ~Exists folder←f⊃ShardFolders ⋄ MkDir folder ⋄ :EndIf
+     
+          n←⊃length ⍝ // Should be # records in the shard
+          size←BlockSize×1⌈⌈n÷BlockSize ⍝ At least one block
+     
+          tn←(folder,'counters.vecdb')⎕NCREATE 0
+          0 ⎕NAPPEND tn 645 ⍝ Number of records
+          ⎕NUNTIE tn
+     
+          :For i :In ⍳≢_Columns ⍝ For each column
+              dr←(TypeNames⍳_Types[i])⊃TypeNums
+              tn←(folder,(⍕i),'.vector')⎕NCREATE 0
+              (size⍴0)⎕NAPPEND tn,dr
+              ⎕NUNTIE tn
+          :EndFor
       :EndFor
      
       file←folder,'meta.vecdb'
@@ -165,32 +189,13 @@
       Open,⊂folder ⍝ now open it properly
     ∇
 
-    ∇ ExtendShard(folder Data rcds data mode);i;type;file;tn;Type;char;tns;sym;m;ix;fp
-    ⍝ Extend or (if mode≡'create') Create a Shard
+    ∇ ExtendShard(folder cols count data);i;file;tn;Type;char;tns;sym;m;ix;fp;dr
+    ⍝ Extend a Shard by count items (using "data" if present)
      
-      :If mode≡'create'
-          tn←(folder,'counters.vecdb')⎕NCREATE 0
-          0 ⎕NAPPEND tn 645 ⍝ Number of records
-          ⎕NUNTIE tn
-      :EndIf
-     
-      :For i :In ⍳⍴Data
-          type←(TypeNames⍳Type←Types[i])⊃TypeNums
-          char←'C'=⊃⊃Type
-          Data[i].f←file←folder,fp←⍕i
-     
-          :Select mode
-          :Case 'create' ⋄ tn←(file,'.vector')⎕NCREATE 0
-              :If char
-                  ⎕NUNTIE tns←(file,'.symbol')⎕NCREATE 0
-                  Data[i].s←⍬
-                  Data[i].SymbolIndex←⍬∘⍳
-                  data[i]←⊂Data[i]SymbolUpdate i⊃data
-              :EndIf
-          :Case 'extend' ⋄ tn←(file,'.vector')⎕NTIE 0
-          :EndSelect
-     
-          (rcds↑i⊃data)⎕NAPPEND tn,type
+      :For i :In ⍳≢cols ⍝ For each column
+          dr←(TypeNames⍳⊂cols[i].type)⊃TypeNums
+          tn←cols[i].file ⎕NTIE 0
+          (count↑i⊃data)⎕NAPPEND tn,dr
           ⎕NUNTIE tn
       :EndFor
     ∇
@@ -330,28 +335,26 @@
       r←0
     ∇
 
-    ∇ r←Delete folder;file;tn;folders;f;files
+    ∇ r←Delete folder;file;tn;folders;files;f
       :Access Public Shared
       ⍝ Erase a vecdb file without opening it first (it might be too damaged to open)
       ⍝ If folder does not exist, that is OK
      
       →(Exists folder)↓0 ⍝ Not there
-      folders←,⊂AddSlash folder
      
-      tn←0
-      :Trap 0
-          tn←(file←folder,'meta.vecdb')⎕FTIE 0
-          folders,←⎕FREAD tn,6
-      :EndTrap
-      :If tn≠0 ⋄ file ⎕FERASE tn ⋄ :EndIf
+      :If isWindows ⋄ folders←⎕CMD'dir "',folder,'" /B /A-D"'
+      :Else ⋄ ∘ ⋄ :EndIf
+      folders←AddSlash¨folders,⊂folder ⍝ process sub-folders first
      
-      :For f :In folders
-          :If isWindows
-              files←⎕CMD'dir ',f
-              ∘
-          :Else
-              ∘
+      :For folder :In ∪folders
+          :If isWindows ⋄ files←⎕CMD ⎕←'dir "',folder,'*.*" /B /A-D'
+          :Else ⋄ ∘
           :EndIf
+          :For file :In files
+              f←folder,file
+              f ⎕NERASE f ⎕NTIE 0
+          :EndFor
+          RmDir folder
       :EndFor
     ∇
 
@@ -424,7 +427,7 @@
     :Section Files
 
     ∇ r←isWindows
-      ∘
+      r←'W'=3 1⊃'.'⎕WG'APLVersion'
     ∇
 
     ∇ r←AddSlash path

@@ -1,6 +1,6 @@
-:Namespace TestVecdb
+﻿:Namespace TestVecdb
 
-    ⍝ Updated to version 0.1.3 with char support
+    ⍝ Updated to version 0.2.0 with sharding
     ⍝ Call TestVecdb.RunAll to run a full system test 
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")
@@ -14,9 +14,27 @@
       :Else ⋄ source←⎕WSID
       :EndTrap
       path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
+      ⎕←'Testing vecdb version ',#.vecdb.Version
       ⎕←Basic
+      ⎕←Sharding
     ∇
-    
+   
+    ∇ r←Sharding;columns;data;options;params;folder;mydb
+     ⍝ Test database with 2 shards
+     
+      folder←path,'sharded_db/'
+      columns←'Name' 'BlockSize' ⋄ types←,¨'C' 'F'
+      data←('IBM' 'AAPL' 'MSFT' 'GOOG')(160.97 112.6 47.21 531.23)
+      options←⎕NS''
+      options.BlockSize←10000
+      options.ShardFolders←folder,∘,¨'12'
+      options.(ShardFn ShardCols)←'{2|⎕UCS ⊃¨⍵}' 1
+      params←'TestDB1'folder columns types options data
+      mydb←⎕NEW time #.vecdb params
+      ∘ ⍝ More to come!
+     
+    ∇
+     
     ∇ x←output x
       :If LOG ⋄ ⍞←x ⋄ :EndIf
     ∇
@@ -51,9 +69,10 @@
       numrecs←5000000 ⍝ 5 million records
       memstats 1      ⍝ Clear memory statistics
      
-      ⎕←'Creating: ',folder←path,'\',(name←'testdb1'),'\'
-      :Trap 11 ⋄ {}(⎕NEW #.vecdb(,⊂folder)).Erase ⋄ :EndTrap
+      ⎕←'Clearing: ',folder←path,'\',(name←'testdb1'),'\'
+      #.vecdb.Delete folder
      
+      ⎕←'Creating: ',folder←path,'\',(name←'testdb1'),'\'
       columns←'col_'∘,¨types←#.vecdb.TypeNames
       assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FBC' ⍝ Types have been added?
       range←2*¯1+8×1 2 4 6 0.25
@@ -68,14 +87,14 @@
       params←name folder columns types options(recs↑¨data)
       TEST←'Creating db & inserting ',(fmtnum recs),' records'
       db←⎕NEW time #.vecdb params
-      assert db.Open
+      assert db.isOpen
       assert options.BlockSize∧.=db.(BlockSize,Size)
       assert 0=db.Close
-      assert 0=db.Open
+      assert 0=db.isOpen
      
       TEST←'Reopen database'
       db←⎕NEW time #.vecdb(,⊂folder) ⍝ Open it again
-      assert db.Open
+      assert db.isOpen
       assert db.Count=recs
       TEST←'Reading them back:'
       assert(recs↑¨data)≡db.Read time(⍳recs)columns

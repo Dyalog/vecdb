@@ -1,10 +1,12 @@
 # README #
 
 `vecdb`
-Current version: 0.1.3
+Current version: 0.2.0
+
+**Version 0.2** adds support for SHARDING, and introduces changes to the database format which are not upwards compatible.
 
 ### What is this repository for? ###
-`vecdb` is a simple "columnar database": each column in the database is stored in a single memory-mapped files. It is written in and for Dyalog APL as a tool on which to base new applications which need to generate and query very large amounts of data, but do not need a "transactional" storage mechanism.
+`vecdb` is a simple "columnar database": each column in the database is stored in a single memory-mapped files. It is written in and for Dyalog APL as a tool on which to base new applications which need to generate and query very large amounts of data and do a large number of high performance reads, but do not need a full set of RDBMS features. In particuler, there is no "transactional" storage mechanism, and no ability to join tables built-in to the database.
 
 ### Features
 
@@ -35,8 +37,8 @@ There are ideas to add support for timeseries and versioning. This would include
 
 1. Add a single-byte indexed Char type (perhaps denoted lowercase "c"), indexing up to 127 unique strings
 1. Support for deleting records
-2. Performing all updates without overwriting data, and tagging old data with the timestamps defining its lifetime, allowing efficient queries on the database as it appeared at any given time in the past.
-3. Built-in support for the computation of aggregate values as part of the parallel query mechanism, based on timeseries or other key values.
+1. Performing all updates without overwriting data, and tagging old data with the timestamps defining its lifetime, allowing efficient queries on the database as it appeared at any given time in the past.
+1. Built-in support for the computation of aggregate values as part of the parallel query mechanism, based on timeseries or other key values.
 
 ### How do I get set up? ###
 
@@ -55,9 +57,13 @@ The full system test creates a database containing all supported data types, ins
     #.TestVecdb.RunAll
 ```
 
+See doc\Usage.md for more information on usage.
+
 ### Contribution guidelines ###
 
 At this early stage, until the project acquires a bit more direction, we ask you to contact one of the key collaborators to discuss your ideas.
+
+Please read doc\Implementation.md before continuing.
 
 ### Key Collaborators ###
 

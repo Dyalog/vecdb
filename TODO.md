@@ -1,6 +1,7 @@
 # TODO #
 
 1. Sharding (Morten is at work)
+2. Beef up error checking on file creation
 2. Parallel queries using isolates
 3. "c" data type (single byte indices)
 4. Timestamped non-overwriting updates

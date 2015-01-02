@@ -42,8 +42,8 @@ Meta-data is stored in a Dyalog Component File "meta.vecdb", which contains data
       data←('IBM' 'AAPL' 'MSFT' 'GOOG')(160.97 112.6 47.21 531.23)
       options←⎕NS''
       options.BlockSize←10000
-      options.Folders←'c:\mydb\shard'∘,¨'12'
-      options.Sharding←'{2|⎕UCS ⊃¨⍵}' 1 
+      options.ShardFolders←'c:\mydb\shard'∘,¨'12'
+      options.(ShardFn ShardCols)←'{2|⎕UCS ⊃¨⍵}' 1 
       params←'TestDB1' 'c:\mydb' columns types options data
       mydb←⎕NEW vecdb params
 

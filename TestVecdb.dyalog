@@ -19,19 +19,30 @@
       ⎕←Sharding
     ∇
    
-    ∇ r←Sharding;columns;data;options;params;folder;mydb
+    ∇ r←Sharding;columns;data;options;params;folder;types;name;db
      ⍝ Test database with 2 shards
      
-      folder←path,'sharded_db/'
-      columns←'Name' 'BlockSize' ⋄ types←,¨'C' 'F'
-      data←('IBM' 'AAPL' 'MSFT' 'GOOG')(160.97 112.6 47.21 531.23)
+      folder←path,'\',(name←'shardtest'),'\'
+      ⎕←'Clearing: ',folder
+      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
+     
+      columns←'Name' 'BlockSize'
+      types←,¨'C' 'F'
+      data←('IBM' 'AAPL' 'MSFT' 'GOOG' 'DYALOG')(160.97 112.6 47.21 531.23 999.99)
+     
       options←⎕NS''
       options.BlockSize←10000
-      options.ShardFolders←folder,∘,¨'12'
-      options.(ShardFn ShardCols)←'{2|⎕UCS ⊃¨⍵}' 1
-      params←'TestDB1'folder columns types options data
-      mydb←⎕NEW time #.vecdb params
-      ∘ ⍝ More to come!
+      options.ShardFolders←(folder,'Shard')∘,¨'12'
+      options.(ShardFn ShardCols)←'{2-2|⎕UCS ⊃¨⊃⍵}' 1
+     
+      params←name folder columns types options(3↑¨data)
+      db←⎕NEW #.vecdb params
+      assert 3=db.Count
+      assert(3↑¨data)≡db.Read(1 2⍴1(1 2 3))columns ⍝ All went into shard #1
+     
+      db.Append columns(3↓¨data)
+      assert 5=db.Count
+      ix←db.Query('Name'(1⊃data))⍬ ⍝ Should find everything
      
     ∇
      
@@ -63,14 +74,15 @@
           z
       }
     
-    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals
+    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix
      ⍝ Create and delete some tables
      
       numrecs←5000000 ⍝ 5 million records
       memstats 1      ⍝ Clear memory statistics
      
-      ⎕←'Clearing: ',folder←path,'\',(name←'testdb1'),'\'
-      #.vecdb.Delete folder
+      folder←path,'\',(name←'testdb1'),'\'
+      ⎕←'Clearing: ',folder
+      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
      
       ⎕←'Creating: ',folder←path,'\',(name←'testdb1'),'\'
       columns←'col_'∘,¨types←#.vecdb.TypeNames
@@ -88,7 +100,7 @@
       TEST←'Creating db & inserting ',(fmtnum recs),' records'
       db←⎕NEW time #.vecdb params
       assert db.isOpen
-      assert options.BlockSize∧.=db.(BlockSize,Size)
+      assert db.Count=recs
       assert 0=db.Close
       assert 0=db.isOpen
      
@@ -120,16 +132,16 @@
       ⍝ Test vecdb.Replace
       indices←db.Query where ⍬
       rcols←columns[rcoli←types⍳,¨'I2' 'B' 'C']
-      TEST←'Updating ',(fmtnum≢indices),' records'
-      newvals←0 1-(⊂indices)∘⌷¨data[2↑rcoli] ⍝ Update with 0-data or ~data
-      newvals,←⊂(≢indices)⍴⊂'changed'        ⍝ And new char values
+      TEST←'Updating ',(fmtnum≢ix←2⊃,indices),' records'
+      newvals←0 1-(⊂ix)∘⌷¨data[2↑rcoli] ⍝ Update with 0-data or ~data
+      newvals,←⊂(≢ix)⍴⊂'changed'        ⍝ And new char values
       assert 0=db.Update time indices rcols newvals
       expect←data[rcoli]
       :For i :In ⍳⍴rcoli
-          t←i⊃expect ⋄ t[indices]←i⊃newvals ⋄ (i⊃expect)←t
+          t←i⊃expect ⋄ t[ix]←i⊃newvals ⋄ (i⊃expect)←t
       :EndFor
-      TEST←'Reading two column for all ',(⍕numrecs),' records'
-      assert expect≡db.Read time(⍳numrecs)rcols
+      TEST←'Reading two columns for all ',(⍕numrecs),' records'
+      assert expect≡db.Read time(1,⍪⊂⍳numrecs)rcols
      
       :If LOG
           ⎕←'Basic tests: memstats before db.Erase:'

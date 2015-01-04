@@ -1,42 +1,57 @@
 # README #
 
 `vecdb`
-Current version: 0.1.3
+Current version: 0.2.0
+
+**Warning: Version 0.2** adds support for SHARDING, and introduces changes to the database format which are not upwards compatible.
 
 ### What is this repository for? ###
-`vecdb` is a simple "columnar database": each column in the database is stored in a single memory-mapped files. It is written in and for Dyalog APL as a tool on which to base new applications which need to generate and query very large amounts of data, but do not need a "transactional" storage mechanism.
+`vecdb` is a simple "columnar database": each column in the database is stored in a single memory-mapped files. It is written in and for Dyalog APL as a tool on which to base new applications which need to generate and query very large amounts of data and do a large number of high performance reads, but do not need a full set of RDBMS features. In particuler, there is no "transactional" storage mechanism, and no ability to join tables built-in to the database.
 
 ### Features
 
-The current version supports the following data types:
+#### Supported data types: ####
 
 * 1, 2 and 4 byte integers
 * 8-byte IEEE double-precision floats
 * Boolean
 * Char (via a "symbol table" of up to 32,767 unique strings indexed by 2-byte integers)
 
-Database modification can only be done using Append and Update operations (no Delete).
+#### Sharding ####
 
-The `Query` function takes a constraint in the form of a list of (column_name values) pair. Each one represents the relation which can be expressed in APL as (column_data∊values); if there is more than one constraint they are AND-ed together. Query also accepts a list of column names to be retrieve for records which match the constraint; if no columns are requested, row indices are returned.
+`vecdb` databases can be *sharded*, or *horizontally partitioned*. Each shard is a separate folder, named when the database is created (by default, there is a single shard). Each folder contains a file for each database column - which is memory mapped to an APL vector when the database is opened. A list of *sharding columns* is defined when the db is created; the values of these columns are passed as the argument to a user-defined *sharding function*, which has to return an origin-1 index into the list of shards, for each record.
 
-A `Read` function takes a list of column names and row indices and returns the requested data.
+#### Supported Operations ####
 
-### Goals
+**Query**: At the moment, the `Query` function takes a constraint in the form of a list of (column_name values) pairs. Each one represents the relation which can be expressed in APL as (column_data∊values). If more than constraint is provided, they are AND-ed together. 
+Query also takes a list of column names to be retrieved for records which match the constraint.
 
-The intention is to extend `vecdb` with the following functionality. Much of this is still half-baked, discussion is welcome. owever, the one application that is being built upon `vecdb` and is driving the initial development requires the following items.
+Query results are returned as a vector with one element per database column, each item containing a vector of values for that column.
 
-1. "Sharding": This idea needs to be developed, but the current thinking is that one or more key fields are identified, and a function is defined to map distinct key tuples to a "shard". A list of folder names points to the folders that will contain the mapped columns for each shard. The result of Query (and argument to Read) will become a 2-row (2-column?) matrix containing shard numbers and record offsets within the shard.
-1. Parallel database queries: For a sharded database, an isolate process will be spun up to perform queries and updates on one or more shards (each shard only being handles by a single process).
-1. A front-end server will allow RESTful database access (this item is perhaps optional). As it stands, `vecdb` is effectively an embedded database engine which does not support data sharing between processes on the same or on separate machines.
+**Search** If the `Query`function is called with an empty list of columns, record identifiers are returned as a 2-column matrix of (shard) (record index) pairs.
 
-### Longer Term (Dreams)
+**Read**: The `Read` function accepts a matrix in the format returned by a search query and a list of column names, and returns a vector per column.
+
+**Update**: The `Update` function also takes as input a search query result, a list of columns, and a vector of vectors containing new data values.
+
+**Append**: Takes a list of column names and a vector of data vectors, one per named column. The columns involved in the Shard selection must always be included.
+
+**Delete**: Deletion is not currently supported.
+
+### Short-Term Goals ###
+
+1. Enhance the query function to accept enhanced queries consisting of column names, comparison functions and values - and support AND/OR. If possible, optimise queries to be sensitive to sharding.
+1. Parallel database queries: For a sharded database: Spin a number of isolate processes up and distribute the shards between them, so that each shard is handled by a single process. Enhance the database API functions to use these processes to perform searches, reads and writes in parallel.
+1. Add a front-end server with a RESTful database API. As it stands, `vecdb` is effectively an embedded database engine which does not support data sharing between processes on the same or on separate machines.
+
+### Longer Term (Dreams) ###
 
 There are ideas to add support for timeseries and versioning. This would include:
 
 1. Add a single-byte indexed Char type (perhaps denoted lowercase "c"), indexing up to 127 unique strings
 1. Support for deleting records
-2. Performing all updates without overwriting data, and tagging old data with the timestamps defining its lifetime, allowing efficient queries on the database as it appeared at any given time in the past.
-3. Built-in support for the computation of aggregate values as part of the parallel query mechanism, based on timeseries or other key values.
+1. Performing all updates without overwriting data, and tagging old data with the timestamps defining its lifetime, allowing efficient queries on the database as it appeared at any given time in the past.
+1. Built-in support for the computation of aggregate values as part of the parallel query mechanism, based on timeseries or other key values.
 
 ### How do I get set up? ###
 
@@ -55,9 +70,13 @@ The full system test creates a database containing all supported data types, ins
     #.TestVecdb.RunAll
 ```
 
+See doc\Usage.md for more information on usage.
+
 ### Contribution guidelines ###
 
 At this early stage, until the project acquires a bit more direction, we ask you to contact one of the key collaborators to discuss your ideas.
+
+Please read doc\Implementation.md before continuing.
 
 ### Key Collaborators ###
 

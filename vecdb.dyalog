@@ -1,95 +1,110 @@
 ﻿:Class vecdb
-⍝ Vector database v0.1.3
+⍝ Dyalog APL vector database - see https://github.com/Dyalog/vecdb
 
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
+    :Field Public Shared Version←'0.2.0'
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
     :Field Public Shared TypeNums←83 163 323 645 11 163
-    :Field Public Shared Version←'0.1.2'
     :EndSection ⍝ Constants
 
     :Section Instance Fields
     :Field Public Name←''
     :Field Public Folder←''             ⍝ Where is it
-    :Field Public Data←0⍴⎕ns ''         ⍝ One element per column: .v (value) .n (name) .t (typename)
-    :Field Public Count←0               ⍝ Number of records
     :Field Public BlockSize←100000      ⍝ Small while we test (must be multiple of 8)
     :Field Public NumBlocks←1           ⍝ We start with one block
-    :Field Public Size←0
-    :Field Public Shards←0⍴⊂0⍴⎕NS ''    ⍝ Shards (not supported in v0.0)
-    :Field Public noFiles←0             ⍝ in-memory database?
-    :Field Public Open←0                ⍝ Not yet open
+    :Field Public noFiles←0             ⍝ in-memory database (not supported)
+    :Field Public isOpen←0              ⍝ Not yet open
+    :Field Public ShardFolders←⍬        ⍝ List of Shard Folders
+    :Field Public ShardFn←⍬             ⍝ Shard Calculation Function
+    :Field Public ShardCols←⍬           ⍝ ShardFn input column indices
 
-    :field _Columns←⍬
-    :field _Types←⍬
+    :Field _Columns←⍬
+    :Field _Types←⍬
+    :Field _Count←⍬
 
-    state←'Name' 'BlockSize'
     :EndSection ⍝ Instance Fields
 
-    :section Properties
-    :property Columns
-    :access public
+    fileprops←'Name' 'BlockSize' ⍝ To go in comp 4 of meta.vecdb
+
+    :Section Properties
+    :Property Columns
+    :Access Public
         ∇ r←get
           r←_Columns
         ∇
-    :endproperty
+    :EndProperty
 
-    :property Types
-    :access public
+    :Property Types
+    :Access public
         ∇ r←get
           r←_Types
         ∇
-    :endproperty
-    :endsection
+    :EndProperty
 
-    ∇ make1(folder);tn;file;props;shards
+    :Property Count
+    :Access public
+        ∇ r←get
+          r←⊃+/_Count
+        ∇
+    :EndProperty
+
+    :EndSection
+
+    ∇ Open(folder);tn;file;props;shards;n;s;i
     ⍝ Open an existing database
      
       :Implements constructor
       :Access Public
      
-      folder←folder,((¯1↑folder)∊'/\')↓'/'
+      folder←AddSlash folder
      
-      :Trap 0
-          tn←(file←folder,'meta.vecdb')⎕FSTIE 0
-      :Else
-          ('Unable to open ',file)⎕SIGNAL 11
+      :Trap 0 ⋄ tn←(file←folder,'meta.vecdb')⎕FSTIE 0
+      :Else ⋄ ('Unable to open ',file)⎕SIGNAL 11
       :EndTrap
-      (Count NumBlocks)←⎕FREAD tn 3
-      props←⎕FREAD tn 4   ⍝ database properties
-      shards←⎕FREAD tn,5
+      (props(_Columns _Types)ShardFolders(ShardFn ShardCols))←⎕FREAD tn(4 5 6 7)
       ⎕FUNTIE tn
+     
       ⍎'(',(⍕1⊃props),')←2⊃props'
+      n←≢_Columns
+      s←≢ShardFolders
      
-      Shards←{
-          (⎕NS¨(≢⍵)⍴⊂''){
-              ⍺{⍺}⍺⍎(⍕,¨⊃⍵),'←2⊃⍵'
-          }¨⍵
-      }¨shards
-      Data←⊃Shards
-      _Columns←Data.n
-      _Types←Data.t
+      Shards←⎕NS¨¨s⍴⊂n⍴⊂''
+      Shards.name←s⍴⊂_Columns                ⍝ Column Names
+      Shards.type←s⍴⊂_Types                  ⍝ Types
+      Shards.file←(n/¨⊂¨ShardFolders),¨¨(,∘'.vector')¨¨s⍴⊂(⍕¨⍳n) ⍝ Vector file names
      
-      (Folder Open Size)←folder 1(NumBlocks×BlockSize)
+      :If 0≠⍴ShardFn ⋄ findshard←⍎ShardFn ⋄ :EndIf ⍝ Define shard calculation function
+     
+      symbols←⎕NS¨n⍴⊂''
+      :For i :In {⍵/⍳⍴⍵}'C'=⊃¨_Types         ⍝ Read symbol files for CHAR fields
+          col←i⊃symbols
+          col.file←folder,(⍕i),'.symbol'     ⍝ symbol file name in main folder
+          col.symbol←GetSymbols col.file     ⍝ Read symbols
+          col.(SymbolIndex←symbol∘⍳)         ⍝ Create lookup function
+      :EndFor
+     
+      (isOpen Folder)←1 folder
       MakeMaps
     ∇
 
-    ∇ MakeMaps;s;i;types;d;t;T
+    ∇ MakeMaps;s;i;types;T;ns;dr;col;sizes
     ⍝ [Re]make all maps
       types←TypeNums[TypeNames⍳Types]
-      ⍝ CCC need to pick up type for C columns
+      _Count←(≢Shards)⍴⊂,0
      
-      :For s :In Shards       ⍝ But we only support 1
-          :For d t T :InEach s types Types
-              :If 'C'=⊃T      ⍝ CHAR
-                  d.s←GetSymbols d.f,'.symbol'
-                  d.(SymbolIndex←s∘⍳)
-                 ⍝ later optimise type? 3+80×⌈8⍟⍴d.s ⍝ Compute type required for indices
-              :EndIf
-              d.v←(t,¯1)⎕MAP(d.f,'.vector')'W'
-              :If Size≠≢d.v ⋄ ∘ ⋄ :EndIf ⍝ // File damaged?
+      :For i :In ⍳≢Shards
+          s←i⊃Shards
+          (i⊃_Count)←645 1 ⎕MAP((i⊃ShardFolders),'counters.vecdb')'W' ⍝ Map record counter
+          :For col :In ⍳≢s
+              (col⊃s).vector←(types[col],¯1)⎕MAP(col⊃s).file'W'
           :EndFor
+     
+          :If 1≠⍴sizes←∪s.(≢vector) ⍝ mapped vectors have different lengths
+          :OrIf sizes∨.<⊃i⊃_Count ⍝ or shorter than record count
+              ∘ ⍝ File damaged
+          :EndIf
       :EndFor
     ∇
 
@@ -105,11 +120,10 @@
       make6(name folder columns types options'') ⍝ No data or option
     ∇
 
-    ∇ make6(name folder columns types options data);i;s;offset;file;tn;type;length
+    ∇ make6(name folder columns types options data);i;s;offset;file;tn;type;length;col;size;n;dr;f;shards;d;sf
       :Implements constructor
       :Access Public
     ⍝ Create a new database
-    ⍝ If folder is empty, do not create files to back it - just keep data in memory
      
       folder,←((¯1↑folder)∊'/\')↓'/' ⍝ make sure we have trailing separator
       :If Exists ¯1↓folder ⍝ Folder already exists
@@ -130,61 +144,112 @@
       ProcessOptions options ⍝ Sets global fields
       'Block size must be a multiple of 8'⎕SIGNAL(0≠8|BlockSize)/11
      
+      ⍝ Set defaults for sharding (1 shard)
+      ShardFolders,←(0=⍴ShardFolders)/⊂folder
+      ShardFolders←AddSlash¨ShardFolders
+      ShardCols←,ShardCols
+      :If 0≠⍴ShardFn ⋄ findshard←⍎ShardFn ⋄ :EndIf ⍝ Define shard calculation function
+     
       'Data lengths not all the same'⎕SIGNAL(1≠≢length←∪≢¨data)/11
-      Size←BlockSize×NumBlocks←1⌈⌈length÷BlockSize ⍝ At least one block
      
-      (Name Count)←name(⊃length) ⍝ Update real props
-      Data←types{n←⍵ ⋄ t←⍺ ⋄ ⎕NS⍪'tn'}¨columns
-      _Columns←Data.n
-      _Types←Data.t
+      (Name _Columns _Types)←name columns types ⍝ Update real fields
      
-      ⍝ Harwired to only write one Shard
-      :For s :In ⍳≢Shards←,⊂Data
-          ExtendShard folder s Size data'create'
+      symbols←⎕NS¨(≢_Columns)⍴⊂''
+      :For i :In {⍵/⍳⍴⍵}'C'=⊃¨_Types         ⍝ Create symbol files for CHAR fields
+          col←i⊃symbols
+          col.symbol←∪i⊃data                 ⍝ Unique symbols in input data
+          col.file←folder,(⍕i),'.symbol'     ⍝ symbol file name in main folder
+          col.symbol PutSymbols col.file     ⍝ Read symbols
+          col.(SymbolIndex←symbol∘⍳)         ⍝ Create lookup function
+          (i⊃data)←col.SymbolIndex i⊃data    ⍝ Convert indices
+      :EndFor
+     
+      (shards data)←(⍳≢_Columns)ShardData data
+      data←data,⊂⍬
+     
+      :For f :In ⍳≢ShardFolders
+          :If ~Exists sf←f⊃ShardFolders ⋄ MkDir sf ⋄ :EndIf
+     
+          d←data[;shards⍳f]
+          n←≢⊃d
+          size←BlockSize×1⌈⌈n÷BlockSize ⍝ At least one block
+     
+          tn←(sf,'counters.vecdb')⎕NCREATE 0
+          n ⎕NAPPEND tn 645        ⍝ Record number of records
+          ⎕NUNTIE tn
+     
+          :For i :In ⍳≢_Columns ⍝ For each column
+              dr←(TypeNames⍳_Types[i])⊃TypeNums
+              tn←(sf,(⍕i),'.vector')⎕NCREATE 0
+              (size↑i⊃d)⎕NAPPEND tn,dr
+              ⎕NUNTIE tn
+          :EndFor
       :EndFor
      
       file←folder,'meta.vecdb'
       tn←file ⎕FCREATE 0
-      ('vecdb ',Version)⎕FAPPEND tn ⍝ 1
-      'Count and NumBlocks in component 3, other metadata in 4 and 5'⎕FAPPEND tn ⍝ 2
-      (Count NumBlocks)⎕FAPPEND tn ⍝ 3
-      (state(⍎¨state))⎕FAPPEND tn   ⍝ 4
-      Shards.('ftn'(f t n))⎕FAPPEND tn ⍝ 5
+      ('vecdb ',Version)⎕FAPPEND tn    ⍝ 1
+      'See github.com/Dyalog/vecdb/doc/Implementation.md'⎕FAPPEND tn ⍝ 2
+      'unused'⎕FAPPEND tn              ⍝ 3
+      (fileprops(⍎¨fileprops))⎕FAPPEND tn ⍝ 4 (Name BlockSize)
+      (_Columns _Types)⎕FAPPEND tn     ⍝ 5
+      ShardFolders ⎕FAPPEND tn         ⍝ 6
+      (ShardFn ShardCols)⎕FAPPEND tn   ⍝ 7
      
       ⎕FUNTIE tn
      
-      make1,⊂folder ⍝ now open it properly
+      Open,⊂folder ⍝ now open it properly
     ∇
 
-    ∇ ExtendShard(folder s rcds data mode);i;type;file;tn;Type;char;tns;sym;m;ix;fp
-    ⍝ Extend or (if mode≡'create') Create a Shard
+    ∇ (shards data)←cix ShardData data;six;s;char;rawdata;sym;c
+     ⍝ Shards is a vector of shards to be updated
+     ⍝ data has one column per shard, and one row per item of data
      
-      :For i :In ⍳⍴Data
-          type←(TypeNames⍳Type←Types[i])⊃TypeNums
-          char←'C'=⊃⊃Type
-          Data[i].f←file←folder,(fp←(⍕i),'_',⍕s)
-          :Select mode
-          :Case 'create' ⋄ tn←(file,'.vector')⎕NCREATE 0
-              :If char
-                  ⎕NUNTIE tns←(file,'.symbol')⎕NCREATE 0
-                  Data[i].s←⍬
-                  Data[i].SymbolIndex←⍬∘⍳
-                  data[i]←⊂Data[i]SymbolUpdate i⊃data
+      rawdata←data
+      :If 1=≢ShardFolders ⍝ Data will necessarily all be in the 1st shard then!
+          shards←,1 ⋄ data←⍪data
+     
+      :Else ⍝ Database *is* sharded
+          'Shard Index Columns must be present in data'⎕SIGNAL((≢cix)∨.<six←cix⍳ShardCols)/11
+          char←{⍵/⍳⍵}'C'=⊃¨_Types[ShardCols] ⍝ Which of the sharding cols are of type char?
+     
+          :If (1=≢char)∧1=≢six ⍝ There is exactly one char shard column...
+          :AndIf (≢⊃sym←symbols[ShardCols].symbol)<≢⊃data ⍝ ... and fewer unique symbols than records
+              s←{⍺ ⍵}⌸(findshard sym)[six⊃data]           ⍝ .. then compute shards on symbols
+     
+          :Else                ⍝ Not exactly one char shard column
+     
+              :If 0≠≢char ⍝ Are *any* char (then we must turn indices into text)
+                  c←six[char] ⍝ index of character shard cols in provided data
+                  data[c]←symbols[ShardCols[char]].{symbol[⍵]}data[c]
               :EndIf
-          :Case 'extend' ⋄ tn←(file,'.vector')⎕NTIE 0
-          :EndSelect
      
-          (rcds↑i⊃data)⎕NAPPEND tn,type
+              s←{⍺ ⍵}⌸findshard data[six]
+          :EndIf
+     
+          shards←s[;1]
+          data←↑[0.5](⊂∘⊂¨s[;2])⌷¨¨⊂rawdata
+      :EndIf
+    ∇
+
+    ∇ ExtendShard(folder cols count data);i;file;tn;Type;char;tns;sym;m;ix;fp;dr;col
+    ⍝ Extend a Shard by count items
+     
+      :For i :In ⍳≢cols ⍝ For each column
+          col←i⊃cols
+          dr←(TypeNames⍳⊂col.type)⊃TypeNums
+          col.⎕EX'vector'
+          tn←col.file ⎕NTIE 0
+          (count↑i⊃data)⎕NAPPEND tn,dr
           ⎕NUNTIE tn
+          col.vector←(dr,¯1)⎕MAP col.file'W'
       :EndFor
     ∇
 
     ∇ r←Close
       :Access Public
-      :If ~0∊⍴Shards
-          Shards.⎕EX'v' ⍝ remove all maps
-      :EndIf
-      r←Open←0       ⍝ record the fact
+      ⎕EX'Shards' 'symbols' '_Count'
+      r←isOpen←0       ⍝ record the fact
     ∇
 
     ∇ unmake
@@ -197,7 +262,7 @@
      
       :If 9=⎕NC'options'
           :For name :In options.⎕NL-2
-              :If (⊂name)∊'BlockSize' 'NumBlocks'
+              :If (⊂name)∊'BlockSize' 'InitBlocks' 'Folders' 'ShardCols' 'ShardFolders' 'ShardFn'
                   ⍎name,'←options.',name
               :Else
                   ('Invalid option name: ',name)⎕SIGNAL 11
@@ -207,41 +272,55 @@
      
     ∇
 
-    ∇ r←Query(where cols);col;value;ix;j
+    ∇ r←Query(where cols);col;value;ix;j;s;count;Data;Cols
       :Access Public
      
       :If (2=≢where)∧where[1]∊Columns ⍝ single constraint?
           where←,⊂where
       :EndIf
      
-      ix←⎕NULL
-      :For (col value) :In where ⍝ AND them all together
-          j←Columns⍳⊂col
-          :If 'C'=⊃j⊃Types ⍝ Char
-              value←Data[j].SymbolIndex value
-          :EndIf
-          ('Invalid column name(s): ',⍕col)⎕SIGNAL((⊂col)∊Columns)↓11
-          :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(Count↑Data[j].v)∊value
-          :Else ⋄ ix/⍨←Data[j].v[ix]∊value
-          :EndIf
-          :If 0=⍴ix ⋄ :Leave ⋄ :EndIf
-      :EndFor
+      r←0 2⍴0 ⍝ (shard indices)
      
-      :If 0=⍴cols ⋄ r←ix ⍝ No columns; Just return index
-      :Else
-          r←Read ix cols
-      :EndIf
+      :For s :In ⍳≢Shards
+          Cols←s⊃Shards
+          count←⊃s⊃_Count
+          ix←⎕NULL
+     
+          :For (col value) :In where ⍝ AND them all together
+              j←Columns⍳⊂col
+              :If 'C'=⊃j⊃Types ⍝ Char
+                  value←symbols[j].SymbolIndex value
+              :EndIf
+              ('Invalid column name(s): ',⍕col)⎕SIGNAL((⊂col)∊Columns)↓11
+              :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(count↑Cols[j].vector)∊value
+              :Else ⋄ ix/⍨←Cols[j].vector[ix]∊value
+              :EndIf
+     
+              :If 0=⍴ix ⋄ :Leave ⋄ :EndIf
+          :EndFor ⍝ Clause
+     
+          r⍪←s ix
+      :EndFor ⍝ Shard
+     
+      :If 0≠≢cols ⋄ r←Read r cols :EndIf
     ∇
 
-    ∇ r←Read(indices cols);char;m;num;cix
+    ∇ r←Read(ix cols);char;m;num;cix;s;indices
       ⍝ Read specified indices of named columns
       :Access Public
      
-      :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple comlumn name
+      :If 1=≡ix ⋄ ix←1,⍪⊂ix ⋄ :EndIf ⍝ Single Shard?
+      :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple column name
       ⎕SIGNAL/ValidateColumns cols
-      r←(Data[cix←Columns⍳cols]).{v[⍵]}⊂indices
-      :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Types[cix]
-          r[char]←Data[cix[char]].{s[⍵]}r[char]
+      cix←Columns⍳cols
+      r←(⍴cix)⍴⊂⍬
+     
+      :For (s indices) :In ↓ix
+          r←r,¨(s⊃Shards)[cix].{vector[⍵]}⊂indices
+      :EndFor
+     
+      :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Types[cix] ⍝ Symbol transation
+          r[char]←symbols[cix[char]].{symbol[⍵]}r[char]
       :EndIf
     ∇
 
@@ -254,104 +333,128 @@
       :EndIf
     ∇
 
-    ∇ r←Append(cols data);length;canupdate;shards;s;alldata;growth;tn;cix
+    ∇ r←Append(cols data);length;canupdate;shards;s;growth;tn;cix;count;i;append;Cols;size;d;n
       :Access Public
      
       'Data lengths not all the same'⎕SIGNAL(1≠≢length←∪≢¨data)/11
       'Col and Data counts not the same'⎕SIGNAL((≢cols)≠≢data)/11
       ⎕SIGNAL/ValidateColumns cols
      
-      cix←Columns⍳cols
-      data←Data[cix]IndexSymbols data
+      cix←_Columns⍳cols
+      data←cix IndexSymbols data ⍝ Char to Symbol indices
      
-      :If 0≠canupdate←length⌊Size-Count
-          (⊂Count+⍳canupdate)(Data[cix]).{
-              v[⍺]←⍵
-          }canupdate↑¨data
-      :EndIf
+      (shards data)←(⍳≢_Columns)ShardData data
      
-      :If length>canupdate    ⍝ We need to extend the file
-          alldata←(≢Columns)⍴⊂⍬ ⋄ alldata[cix]←canupdate↓¨data
-          growth←BlockSize×(length-canupdate)(⌈÷)BlockSize ⍝ How many records to add
-          shards←≢Shards
-          Shards.⎕EX'v'
-          :For s :In shards
-              Data←s⊃Shards
-              ExtendShard Folder s growth alldata'extend'
-          :EndFor
+      :For s :In shards
+          d←data[;shards⍳s]
+          length←≢⊃d              ⍝ # records to be written to *this* Shard
+          Cols←s⊃Shards           ⍝ Mapped columns in this Shard
+          count←⊃s⊃_Count         ⍝ Active records in this Shard
+          size←≢Cols[⊃cix].vector ⍝ Current Shard allocation
      
-          Size+←growth
-          NumBlocks←Size÷BlockSize
-          MakeMaps            ⍝ remake all the maps
-      :EndIf
-      Count+←length
-      tn←(Folder,'meta.vecdb')⎕FSTIE 0
-      (Count NumBlocks)⎕FREPLACE tn 3
-      ⎕FUNTIE tn
+          :If 0≠canupdate←length⌊size-count ⍝ Updates to existing maps
+              i←⊂count+⍳canupdate
+              i(Cols[cix]).{vector[⍺]←⍵}canupdate↑¨d
+          :EndIf
+     
+          :If length>canupdate              ⍝ We need to extend the file
+              append←(≢_Columns)⍴⊂⍬
+              append[cix]←canupdate↓¨d      ⍝ Data which was not updated
+              growth←BlockSize×(length-canupdate)(⌈÷)BlockSize ⍝ How many records to add to the Shard
+              ExtendShard(s⊃ShardFolders)Cols growth append
+          :EndIf
+     
+          _Count[s]←count+length  ⍝ Update (mapped) counter
+      :EndFor
+     
       r←0
     ∇
 
-    ∇ {r}←Update(indices cols data);cix
+    ∇ {r}←Update(ix cols data);cix;indices;s;p;i
       :Access Public
      
       :If 1=≡cols ⋄ (cols data)←,∘⊂¨cols data ⋄ :EndIf ⍝ Simple col name
       ⎕SIGNAL/ValidateColumns cols
-     
       cix←Columns⍳cols
-      data←Data[cix]IndexSymbols data
+      'Cannot update Sharding Cols'⎕SIGNAL(cix∊ShardCols)/11
      
-      (⊂indices)(Data[cix]).{
-          v[⍺]←⍵
-      }data
+      data←cix IndexSymbols data
+     
+      :If 1=≢ix ⋄ data←⍪data ⍝ One shard
+      :Else                  ⍝ Partition data by Shard
+          p←(≢⊃data)⍴0 ⋄ p[+\1,≢¨¯1↓ix[;2]]←1
+          data←↑p∘⊂¨data
+      :EndIf
+     
+      :For i :In ⍳≢ix        ⍝ Each partition
+          (s indices)←ix[i;]
+          (⊂indices)((s⊃Shards)[cix]).{vector[⍺]←⍵}data[;i]
+      :EndFor
       r←0
     ∇
 
-    ∇ r←Erase;file;s;f;shards;i
+    ∇ r←Delete folder;file;tn;folders;files;f
+      :Access Public Shared
+      ⍝ Erase a vecdb file without opening it first (it might be too damaged to open)
+      ⍝   Does check whether there is a meta file in the folder
+      ⍝   Also deletes
+     
+      folder←AddSlash folder
+      'Folder not found'⎕SIGNAL(Exists folder)↓22         ⍝ Not there
+      'Not a vecdb'⎕SIGNAL(Exists file←folder,'meta.vecdb')↓22 ⍝ Paranoia
+     
+      tn←0 ⋄ folders←⍬
+      :Trap 0 ⋄ tn←file ⎕FTIE 0
+          folders←⎕FREAD tn 6
+          folders←(Exists¨folders)/folders
+      :EndTrap
+      ⎕FUNTIE tn∩⎕FNUMS
+     
+      folders←∪folders,⊂folder ⍝ process sub-folders first
+     
+      :For folder :In folders
+          :If isWindows ⋄ files←⎕CMD'dir "',folder,'*.*" /B /A-D'
+          :Else ⋄ ∘ ⍝ NIX
+          :EndIf
+          :For file :In files
+              f←folder,file
+              f ⎕NERASE f ⎕NTIE 0
+          :EndFor
+          RmDir folder
+      :EndFor
+    ∇
+
+    ∇ r←Erase
       :Access Public
       ⍝ /// needs error trapping
      
-      'vecdb is not open'⎕SIGNAL Open↓11
+      'vecdb is not open'⎕SIGNAL isOpen↓11
      
-      :If Exists file←Folder,'meta.vecdb'
-          shards←≢Shards
-          {}Close
-          :For Data :In Shards
-              :For i :In ⍳≢Data.f
-                  (f t)←Data[i].(f t)
-                  {⍵ ⎕NERASE ⍵ ⎕NTIE 0}f,'.vector'
-                  :If 'C'=⊃t ⍝ Is there a symbol file to erase?
-                      {⍵ ⎕NERASE ⍵ ⎕NTIE 0}f,'.symbol'
-                  :EndIf
-              :EndFor
-          :EndFor
-          file ⎕NERASE file ⎕NTIE 0
-          RmDir Folder
-          r←0
-      :Else
-          ('Not a vector db: ',Folder)⎕SIGNAL 2
-      :EndIf
+      {}Close
+      Delete Folder
+      r←0
     ∇
-        
+
     ∇ ix←ns SymbolUpdate values;m
       ⍝ Convert values to symbol indices, and update the file if necessary
      
-      :If ∨/m←(≢ns.s)<ix←ns.SymbolIndex values   ⍝ new strings found
-          ns.s,←∪m/values             ⍝ Update in-memory symbol table
-          ns.s PutSymbols ns.f,'.symbol' ⍝ ... update the symbol file
-          ns.(SymbolIndex←s∘⍳)        ⍝ ... and the hash lookup function
-          ix←ns.SymbolIndex values    ⍝ ... and use the function
+      :If ∨/m←(≢ns.symbol)<ix←ns.SymbolIndex values   ⍝ new strings found
+          ns.symbol,←∪m/values             ⍝ Update in-memory symbol table
+          ns.symbol PutSymbols ns.file     ⍝ ... update the symbol file
+          ns.(SymbolIndex←symbol∘⍳)        ⍝ ... define new hashed lookup function
+          ix←ns.SymbolIndex values         ⍝ ... and use it
       :EndIf
     ∇
-    
-    ∇ data←Data IndexSymbols data;char
+
+    ∇ data←cix IndexSymbols data;char
     ⍝ Convert all char columns to indices
      
-      :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Data.t
-          data[char]←Data[char]SymbolUpdate¨data[char]
+      :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨_Types[cix]
+          data[char]←symbols[cix[char]]SymbolUpdate¨data[char]
       :EndIf
      
     ∇
-        
+
     ∇ r←GetSymbols file;tn;s
     ⍝ Read and deserialise symbol table from native file
      
@@ -359,7 +462,7 @@
       :Trap 0 ⋄ r←0(220⌶)s ⍝ Deseralise
       :Else ⋄ ∘ ⋄ :EndTrap ⍝ Symbol table damaged :-(
     ∇
-    
+
     ∇ r←symbols PutSymbols file;tn
     ⍝ Serialise and write symbol table to native file
      
@@ -373,7 +476,15 @@
     ∇
 
     :Section Files
-    ⍝ /// These functions should be really be :Included from Files
+
+    ∇ r←isWindows
+      r←'W'=3 1⊃'.'⎕WG'APLVersion'
+    ∇
+
+    ∇ r←AddSlash path
+    ⍝ Ensure folder name has trailing slash
+      r←path,((¯1↑path)∊'/\')↓⊃isWindows⌽'/\'
+    ∇
 
     ∇ ok←Exists path;GFA
     ⍝ Is the argument the name of an existing file or folder?

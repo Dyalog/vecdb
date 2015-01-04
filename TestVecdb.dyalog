@@ -1,13 +1,13 @@
 ﻿:Namespace TestVecdb
 
     ⍝ Updated to version 0.2.0 with sharding
-    ⍝ Call TestVecdb.RunAll to run a full system test 
+    ⍝ Call TestVecdb.RunAll to run a full system test
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")
-    
-    (⎕IO ⎕ML)←1 1    
-    LOG←1      
-    
+
+    (⎕IO ⎕ML)←1 1
+    LOG←1
+
     ∇ z←RunAll;path;source
       ⎕FUNTIE ⎕FNUMS ⋄ ⎕NUNTIE ⎕NNUMS
       :Trap 6 ⋄ source←SALT_Data.SourceFile
@@ -18,62 +18,48 @@
       ⎕←Basic
       ⎕←Sharding
     ∇
-   
-    ∇ r←Sharding;columns;data;options;params;folder;types;name;db
+
+    ∇ z←Sharding;columns;data;options;params;folder;types;name;db;ix;rotate
      ⍝ Test database with 2 shards
      
       folder←path,'\',(name←'shardtest'),'\'
-      ⎕←'Clearing: ',folder
-      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
      
-      columns←'Name' 'BlockSize'
-      types←,¨'C' 'F'
-      data←('IBM' 'AAPL' 'MSFT' 'GOOG' 'DYALOG')(160.97 112.6 47.21 531.23 999.99)
+      :For rotate :In 0 1 2 ⍝ Test with shard key in all positions
      
-      options←⎕NS''
-      options.BlockSize←10000
-      options.ShardFolders←(folder,'Shard')∘,¨'12'
-      options.(ShardFn ShardCols)←'{2-2|⎕UCS ⊃¨⊃⍵}' 1
+          ⎕←'Clearing: ',folder
+          :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
      
-      params←name folder columns types options(3↑¨data)
-      db←⎕NEW #.vecdb params
-      assert 3=db.Count
-      assert(3↑¨data)≡db.Read(1 2⍴1(1 2 3))columns ⍝ All went into shard #1
+          columns←rotate⌽'Name' 'BlockSize' 'Flag'
+          types←rotate⌽,¨'C' 'F' 'C'
+          data←rotate⌽('IBM' 'AAPL' 'MSFT' 'GOOG' 'DYALOG')(160.97 112.6 47.21 531.23 999.99)(5⍴'Buy' 'Sell')
      
-      db.Append columns(3↓¨data)
-      assert 5=db.Count
-      ix←db.Query('Name'(1⊃data))⍬ ⍝ Should find everything
+          options←⎕NS''
+          options.BlockSize←10000
+          options.ShardFolders←(folder,'Shard')∘,¨'12'
+          options.(ShardFn ShardCols)←'{2-2|⎕UCS ⊃¨⊃⍵}'(⊃rotate⌽1 3 2)
      
-    ∇
+          params←name folder columns types options(3↑¨data)
+          TEST←'Create sharded database (rotate=',(⍕rotate),')'
+          db←⎕NEW time #.vecdb params
+          assert 3=db.Count
+          assert(3↑¨data)≡db.Read(1 2⍴1(1 2 3))columns ⍝ All went into shard #1
      
-    ∇ x←output x
-      :If LOG ⋄ ⍞←x ⋄ :EndIf
-    ∇
-    
-    ∇ r←fmtnum x
-    ⍝ Nice formatting of large integers
-      r←(↓((⍴x),20)⍴'CI20'⎕FMT⍪,x)~¨' '
-    ∇
-    
-    ∇ r←memstats reset;maxws;z
-      :If reset=1
-          z←0(2000⌶)14 ⍝ Reset high water mark
-      :Else
-          maxws←⊂⍕2 ⎕NQ'.' 'GetEnvironment' 'MAXWS'
-          r←⎕WA
-          r←'MAXWS' '⎕WA' 'WS Used' 'Allocated' 'High Water Mark',⍪¯20↑¨maxws,fmtnum r,(2000⌶)1 13 14
-      :EndIf
+          TEST←'Append last 2 records'
+          db.Append time columns(3↓¨data)
+     
+          assert 5=db.Count
+          assert(1 2,⍪⍳¨4 1)≡ix←db.Query('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
+          TEST←'Read it all back'
+          assert data≡db.Read time ix columns
+     
+          TEST←'Erase database'
+          assert 0={db.Erase}time ⍬
+     
+      :EndFor ⍝ rotate
+     
+      z←'Sharding Tests Completed'
     ∇
 
-    assert←{'Assertion failed'⎕SIGNAL(⍵=0)/11}  
-
-      time←{⍺←⊣ ⋄ t←⎕AI[3]
-          o←output TEST,' ... '
-          z←⍺ ⍺⍺ ⍵
-          o←output(⍕⎕AI[3]-t),'ms',⎕UCS 10
-          z
-      }
-    
     ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix
      ⍝ Create and delete some tables
      
@@ -153,5 +139,33 @@
      
       z←'Creation Tests Completed'
     ∇
-    
+
+    ∇ x←output x
+      :If LOG ⋄ ⍞←x ⋄ :EndIf
+    ∇
+
+    ∇ r←fmtnum x
+    ⍝ Nice formatting of large integers
+      r←(↓((⍴x),20)⍴'CI20'⎕FMT⍪,x)~¨' '
+    ∇
+
+    ∇ r←memstats reset;maxws;z
+      :If reset=1
+          z←0(2000⌶)14 ⍝ Reset high water mark
+      :Else
+          maxws←⊂⍕2 ⎕NQ'.' 'GetEnvironment' 'MAXWS'
+          r←⎕WA
+          r←'MAXWS' '⎕WA' 'WS Used' 'Allocated' 'High Water Mark',⍪¯20↑¨maxws,fmtnum r,(2000⌶)1 13 14
+      :EndIf
+    ∇
+
+    assert←{'Assertion failed'⎕SIGNAL(⍵=0)/11}
+
+      time←{⍺←⊣ ⋄ t←⎕AI[3]
+          o←output TEST,' ... '
+          z←⍺ ⍺⍺ ⍵
+          o←output(⍕⎕AI[3]-t),'ms',⎕UCS 10
+          z
+      }
+
 :EndNamespace

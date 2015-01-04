@@ -1,4 +1,5 @@
 ﻿:Class vecdb
+⍝ Dyalog APL vector database - see https://github.com/Dyalog/vecdb
 
     (⎕IO ⎕ML)←1 1
 
@@ -123,7 +124,6 @@
       :Implements constructor
       :Access Public
     ⍝ Create a new database
-    ⍝ If folder is empty, do not create files to back it - just keep data in memory
      
       folder,←((¯1↑folder)∊'/\')↓'/' ⍝ make sure we have trailing separator
       :If Exists ¯1↓folder ⍝ Folder already exists
@@ -147,23 +147,25 @@
       ⍝ Set defaults for sharding (1 shard)
       ShardFolders,←(0=⍴ShardFolders)/⊂folder
       ShardFolders←AddSlash¨ShardFolders
+      ShardCols←,ShardCols
       :If 0≠⍴ShardFn ⋄ findshard←⍎ShardFn ⋄ :EndIf ⍝ Define shard calculation function
      
       'Data lengths not all the same'⎕SIGNAL(1≠≢length←∪≢¨data)/11
      
       (Name _Columns _Types)←name columns types ⍝ Update real fields
-      (shards data)←(⍳≢_Columns)ShardData data
-      data←data,⊂⍬
      
       symbols←⎕NS¨(≢_Columns)⍴⊂''
       :For i :In {⍵/⍳⍴⍵}'C'=⊃¨_Types         ⍝ Create symbol files for CHAR fields
           col←i⊃symbols
-          col.symbol←∪⊃,/data[i;]            ⍝ Unique symbols in input data
+          col.symbol←∪i⊃data                 ⍝ Unique symbols in input data
           col.file←folder,(⍕i),'.symbol'     ⍝ symbol file name in main folder
           col.symbol PutSymbols col.file     ⍝ Read symbols
           col.(SymbolIndex←symbol∘⍳)         ⍝ Create lookup function
-          data[i;]←col.SymbolIndex¨data[i;] ⍝ Convert indices
+          (i⊃data)←col.SymbolIndex i⊃data    ⍝ Convert indices
       :EndFor
+     
+      (shards data)←(⍳≢_Columns)ShardData data
+      data←data,⊂⍬
      
       :For f :In ⍳≢ShardFolders
           :If ~Exists sf←f⊃ShardFolders ⋄ MkDir sf ⋄ :EndIf
@@ -198,20 +200,40 @@
      
       Open,⊂folder ⍝ now open it properly
     ∇
-    
-    ∇ (shards data)←cix ShardData data;six;s
-      :If 1=≢ShardFolders
+
+    ∇ (shards data)←cix ShardData data;six;s;char;rawdata;sym;c
+     ⍝ Shards is a vector of shards to be updated
+     ⍝ data has one column per shard, and one row per item of data
+     
+      rawdata←data
+      :If 1=≢ShardFolders ⍝ Data will necessarily all be in the 1st shard then!
           shards←,1 ⋄ data←⍪data
-      :Else
-          'Shard Index Columns must be present'⎕SIGNAL((≢cix)∨.<six←cix⍳ShardCols)/11
-          s←{⍺ ⍵}⌸findshard data[six]
+     
+      :Else ⍝ Database *is* sharded
+          'Shard Index Columns must be present in data'⎕SIGNAL((≢cix)∨.<six←cix⍳ShardCols)/11
+          char←{⍵/⍳⍵}'C'=⊃¨_Types[ShardCols] ⍝ Which of the sharding cols are of type char?
+     
+          :If (1=≢char)∧1=≢six ⍝ There is exactly one char shard column...
+          :AndIf (≢⊃sym←symbols[ShardCols].symbol)<≢⊃data ⍝ ... and fewer unique symbols than records
+              s←{⍺ ⍵}⌸(findshard sym)[six⊃data]           ⍝ .. then compute shards on symbols
+     
+          :Else                ⍝ Not exactly one char shard column
+     
+              :If 0≠≢char ⍝ Are *any* char (then we must turn indices into text)
+                  c←six[char] ⍝ index of character shard cols in provided data
+                  data[c]←symbols[ShardCols[char]].{symbol[⍵]}data[c]
+              :EndIf
+     
+              s←{⍺ ⍵}⌸findshard data[six]
+          :EndIf
+     
           shards←s[;1]
-          data←↑[0.5](⊂∘⊂¨s[;2])⌷¨¨⊂data
+          data←↑[0.5](⊂∘⊂¨s[;2])⌷¨¨⊂rawdata
       :EndIf
     ∇
 
     ∇ ExtendShard(folder cols count data);i;file;tn;Type;char;tns;sym;m;ix;fp;dr;col
-    ⍝ Extend a Shard by count items (using "data" if present)
+    ⍝ Extend a Shard by count items
      
       :For i :In ⍳≢cols ⍝ For each column
           col←i⊃cols
@@ -311,7 +333,7 @@
       :EndIf
     ∇
 
-    ∇ r←Append(cols data);length;canupdate;shards;s;growth;tn;cix;count;i;append;Cols;size
+    ∇ r←Append(cols data);length;canupdate;shards;s;growth;tn;cix;count;i;append;Cols;size;d;n
       :Access Public
      
       'Data lengths not all the same'⎕SIGNAL(1≠≢length←∪≢¨data)/11
@@ -321,24 +343,24 @@
       cix←_Columns⍳cols
       data←cix IndexSymbols data ⍝ Char to Symbol indices
      
-      :If 1≠≢ShardFolders ⋄ ∘ ⋄ :EndIf ⍝ /// Only 1 shard at the moment
-      remap←0 ⍝ re-make maps due to shard extension?
+      (shards data)←(⍳≢_Columns)ShardData data
      
-      :For s :In ⍳≢ShardFolders
-     
-          Cols←s⊃Shards
-          count←⊃s⊃_Count
-          size←≢Cols[⊃cix].vector
+      :For s :In shards
+          d←data[;shards⍳s]
+          length←≢⊃d              ⍝ # records to be written to *this* Shard
+          Cols←s⊃Shards           ⍝ Mapped columns in this Shard
+          count←⊃s⊃_Count         ⍝ Active records in this Shard
+          size←≢Cols[⊃cix].vector ⍝ Current Shard allocation
      
           :If 0≠canupdate←length⌊size-count ⍝ Updates to existing maps
               i←⊂count+⍳canupdate
-              i(Cols[cix]).{vector[⍺]←⍵}canupdate↑¨data
+              i(Cols[cix]).{vector[⍺]←⍵}canupdate↑¨d
           :EndIf
      
           :If length>canupdate              ⍝ We need to extend the file
               append←(≢_Columns)⍴⊂⍬
-              append[cix]←canupdate↓¨data
-              growth←BlockSize×(length-canupdate)(⌈÷)BlockSize ⍝ How many records to add
+              append[cix]←canupdate↓¨d      ⍝ Data which was not updated
+              growth←BlockSize×(length-canupdate)(⌈÷)BlockSize ⍝ How many records to add to the Shard
               ExtendShard(s⊃ShardFolders)Cols growth append
           :EndIf
      
@@ -461,7 +483,7 @@
 
     ∇ r←AddSlash path
     ⍝ Ensure folder name has trailing slash
-      r←path,((¯1↑path)∊'/\')↓'/'
+      r←path,((¯1↑path)∊'/\')↓⊃isWindows⌽'/\'
     ∇
 
     ∇ ok←Exists path;GFA

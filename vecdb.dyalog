@@ -4,9 +4,11 @@
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared Version←'0.2.0'
+    :Field Public Shared Version←'0.2.1' ⍝ With minimal "Group By" support
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
     :Field Public Shared TypeNums←83 163 323 645 11 163
+    :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
+    :Field Public Shared SummaryAPLFns←'+/' '⌈/' '⌊/' '≢'
     :EndSection ⍝ Constants
 
     :Section Instance Fields
@@ -46,7 +48,7 @@
     :Property Count
     :Access public
         ∇ r←get
-          r←⊃+/_Count
+          r←⊃+/_Counts.counter
         ∇
     :EndProperty
 
@@ -92,17 +94,17 @@
     ∇ MakeMaps;s;i;types;T;ns;dr;col;sizes
     ⍝ [Re]make all maps
       types←TypeNums[TypeNames⍳Types]
-      _Count←(≢Shards)⍴⊂,0
+      _Counts←⎕NS¨(≢Shards)⍴⊂⍬
      
       :For i :In ⍳≢Shards
           s←i⊃Shards
-          (i⊃_Count)←645 1 ⎕MAP((i⊃ShardFolders),'counters.vecdb')'W' ⍝ Map record counter
+          _Counts[i].counter←645 1 ⎕MAP((i⊃ShardFolders),'counters.vecdb')'W' ⍝ Map record counter
           :For col :In ⍳≢s
               (col⊃s).vector←(types[col],¯1)⎕MAP(col⊃s).file'W'
           :EndFor
      
           :If 1≠⍴sizes←∪s.(≢vector) ⍝ mapped vectors have different lengths
-          :OrIf sizes∨.<⊃i⊃_Count ⍝ or shorter than record count
+          :OrIf sizes∨.<⊃(i⊃_Counts).counter ⍝ or shorter than record count
               ∘ ⍝ File damaged
           :EndIf
       :EndFor
@@ -248,7 +250,7 @@
 
     ∇ r←Close
       :Access Public
-      ⎕EX'Shards' 'symbols' '_Count'
+      ⎕EX'Shards' 'symbols' '_Counts'
       r←isOpen←0       ⍝ record the fact
     ∇
 
@@ -269,21 +271,42 @@
               :EndIf
           :EndFor
       :EndIf
-     
     ∇
 
-    ∇ r←Query(where cols);col;value;ix;j;s;count;Data;Cols
+    ∇ (summary colnames)←ParseSummary cols;p
+    ⍝ Split column specifications into summaryfn colname
+     
+      :If 0=⍴cols ⋄ summary←colnames←⍬
+      :Else
+          :If 2>≡cols ⋄ cols←,⊂,cols ⋄ :EndIf ⍝ Enclose if simple
+          p←p×(≢¨cols)≥p←cols⍳¨' ' ⍝ position of separator
+          summary←(0⌈p-1)↑¨cols
+          colnames←p↓¨cols
+      :EndIf
+    ∇
+
+    ∇ r←Query args;where;cols;groupby;col;value;ix;j;s;count;Data;Cols;summary;m;i
       :Access Public
      
-      :If (2=≢where)∧where[1]∊Columns ⍝ single constraint?
+      (where cols groupby)←3↑args,(≢args)↓⍬ ⍬ ⍬
+      :If 2=≢where ⋄ :AndIf where[1]∊Columns ⍝ just a single constraint?
           where←,⊂where
+      :EndIf
+     
+      (summary cols)←ParseSummary cols
+      'UNKNOWN SUMMARY FUNCTION'⎕SIGNAL(∧/summary∊SummaryFns,⊂'')↓11
+     
+      :If 0≠≢groupby ⍝ We are grouping
+          :If 1=≡groupby ⋄ groupby←,⊂groupby ⋄ :EndIf ⍝ Enclose if simple
+          m←(0≠≢¨summary)∨cols∊groupby ⍝ summary or one of the grouping cols?
+          'ONLY SUMMARIZED COLUMNS MAY BE SELECTED WHEN GROUPING'⎕SIGNAL(∧/m)↓11
       :EndIf
      
       r←0 2⍴0 ⍝ (shard indices)
      
       :For s :In ⍳≢Shards
           Cols←s⊃Shards
-          count←⊃s⊃_Count
+          count←⊃(s⊃_Counts).counter
           ix←⎕NULL
      
           :For (col value) :In where ⍝ AND them all together
@@ -302,21 +325,75 @@
           r⍪←s ix
       :EndFor ⍝ Shard
      
-      :If 0≠≢cols ⋄ r←Read r cols :EndIf
+      :If 0=≢cols ⋄ :GoTo 0 ⍝ Not asked to return anything: Just return indices
+      :ElseIf 0=≢groupby    ⍝ no group by statement
+          r←Read r cols
+          :For i :In (0≠≢¨summary)/⍳≢cols
+              (i⊃r)←⍎((SummaryFns⍳summary[i])⊃SummaryAPLFns),'i⊃r'
+          :EndFor
+      :Else
+          r←Summarize r summary cols groupby
+      :EndIf
+    ∇
+
+    ∇ r←Summarize(ix summary cols groupby);char;m;num;s;indices;fns;cix;allix;allcols;numrecs;blksize;offset;groupfn;t;multi;split;data
+      ⍝ Read and Summarize specified indices of named columns
+      ⍝ Very similar to Read, but not public - called by Query
+     
+      allix←Columns⍳allcols←groupby∪cols
+      :If (1≠⍴cols)∨1≠⍴groupby
+          'Only one summary and one groupby column right now, sorry'⎕SIGNAL 11
+      :EndIf
+     
+      fns←(SummaryAPLFns,⊂'')[SummaryFns⍳summary]
+      groupfn←⍎'{⍺,',(1⊃fns),'⍵}⌸' ⍝ This needs enhancement to remove that limitation above
+      r←(0,≢allix)⍴0
+     
+      :For (s indices) :In ↓ix
+          offset←0
+          :If indices≡⎕NULL ⍝ All records selected
+              blksize←numrecs←⊃(s⊃_Counts).counter
+          :Else ⍝ <indices> records selected
+              blksize←numrecs←≢indices
+          :EndIf
+     
+          split←0     ⍝ We did it all at once
+          :Repeat
+              :Trap 1 ⍝ WS FULL
+                  :If indices≡⎕NULL ⍝ All records still selected
+                      data←offset((s⊃Shards)[allix].{⍵↑⍺↓vector})blksize
+                  :Else
+                      data←(s⊃Shards)[allix].{vector[⍵]}⊂blksize↑offset↓indices
+                  :EndIf
+     
+                  r⍪←(1⊃data)groupfn 2⊃data
+                  offset+←blksize
+              :Else ⍝ Got a WS FULL
+                  ∘∘∘ ⍝ Morten to trace this
+                  split←1 ⍝ We had to go around again
+                  blksize←blksize(⌈÷)2
+              :EndTrap
+          :Until offset≥numrecs
+     
+          :If split
+              r←r[;1]groupfn r[;2]
+          :EndIf
+      :EndFor
     ∇
 
     ∇ r←Read(ix cols);char;m;num;cix;s;indices
       ⍝ Read specified indices of named columns
       :Access Public
      
-      :If 1=≡ix ⋄ ix←1,⍪⊂ix ⋄ :EndIf ⍝ Single Shard?
+      :If 1=⍴⍴ix ⋄ ix←1,⍪⊂ix ⋄ :EndIf ⍝ Single Shard?
       :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple column name
       ⎕SIGNAL/ValidateColumns cols
       cix←Columns⍳cols
       r←(⍴cix)⍴⊂⍬
      
       :For (s indices) :In ↓ix
-          r←r,¨(s⊃Shards)[cix].{vector[⍵]}⊂indices
+          :If indices≡⎕NULL ⋄ r←r,¨(s⊃_Counts).counter↑¨(s⊃Shards)[cix].vector
+          :Else ⋄ r←r,¨(s⊃Shards)[cix].{vector[⍵]}⊂indices ⋄ :EndIf
       :EndFor
      
       :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Types[cix] ⍝ Symbol transation
@@ -349,7 +426,7 @@
           d←data[;shards⍳s]
           length←≢⊃d              ⍝ # records to be written to *this* Shard
           Cols←s⊃Shards           ⍝ Mapped columns in this Shard
-          count←⊃s⊃_Count         ⍝ Active records in this Shard
+          count←⊃(s⊃_Counts).counter ⍝ Active records in this Shard
           size←≢Cols[⊃cix].vector ⍝ Current Shard allocation
      
           :If 0≠canupdate←length⌊size-count ⍝ Updates to existing maps
@@ -364,7 +441,7 @@
               ExtendShard(s⊃ShardFolders)Cols growth append
           :EndIf
      
-          _Count[s]←count+length  ⍝ Update (mapped) counter
+          _Counts[s].counter[1]←count+length  ⍝ Update (mapped) counter
       :EndFor
      
       r←0

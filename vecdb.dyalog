@@ -4,7 +4,7 @@
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared Version←'0.2.1' ⍝ With minimal "Group By" support
+    :Field Public Shared Version←'0.2.1' ⍝ Able to "Group By" one column at a time
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
     :Field Public Shared TypeNums←83 163 323 645 11 163
     :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
@@ -336,17 +336,26 @@
       :EndIf
     ∇
 
-    ∇ r←Summarize(ix summary cols groupby);char;m;num;s;indices;fns;cix;allix;allcols;numrecs;blksize;offset;groupfn;t;multi;split;data
+    ∇ r←Summarize(ix summary cols groupby);char;m;num;s;indices;fns;cix;allix;allcols;numrecs;blksize;offset;groupfn;t;multi;split;data;recs;groupix;colix;z
       ⍝ Read and Summarize specified indices of named columns
       ⍝ Very similar to Read, but not public - called by Query
      
       allix←Columns⍳allcols←groupby∪cols
-      :If (1≠⍴cols)∨1≠⍴groupby
-          'Only one summary and one groupby column right now, sorry'⎕SIGNAL 11
-      :EndIf
+      groupix←allcols⍳groupby
+      colix←allcols⍳cols
      
       fns←(SummaryAPLFns,⊂'')[SummaryFns⍳summary]
-      groupfn←⍎'{⍺,',(1⊃fns),'⍵}⌸' ⍝ This needs enhancement to remove that limitation above
+     
+      :If 1=≢cols ⍝ Only one summarized column
+          groupfn←⍎'{(⊃⍺){⍺,',(1⊃fns),'⍵}⌸⊃⍵}'
+      :Else       ⍝ More than one summarized column
+          z←⊂'r←keys groupfn data'
+          :If 1=≢groupix ⋄ z,←⊂'keys←⊃keys' ⋄ :Else ⋄ z,←⊂'keys←↑[0.5]keys' ⋄ :EndIf
+          z,←⊂'r←',(⍕≢groupix,colix),'↑⍤1⊢keys{⍺,',(1⊃fns),'⍵}⌸⊃data'
+          z,←(1↓⍳≢colix){'r[;',(⍕⍺+≢groupix),']←keys{',⍵,'⍵}⌸',(⍕⍺),'⊃data'}¨1↓fns
+          :If 'groupfn'≢⎕FX z ⋄ ∘∘∘ ⋄ :EndIf
+      :EndIf
+     
       r←(0,≢allix)⍴0
      
       :For (s indices) :In ↓ix
@@ -360,23 +369,28 @@
           split←0     ⍝ We did it all at once
           :Repeat
               :Trap 1 ⍝ WS FULL
+                  recs←blksize⌊numrecs-offset
                   :If indices≡⎕NULL ⍝ All records still selected
-                      data←offset((s⊃Shards)[allix].{⍵↑⍺↓vector})blksize
+                      data←offset((s⊃Shards)[allix].{⍵↑⍺↓vector})recs
                   :Else
-                      data←(s⊃Shards)[allix].{vector[⍵]}⊂blksize↑offset↓indices
+                      data←(s⊃Shards)[allix].{vector[⍵]}⊂recs↑offset↓indices
                   :EndIf
      
-                  r⍪←(1⊃data)groupfn 2⊃data
+                  r⍪←data[groupix]groupfn data[colix]
                   offset+←blksize
+                  ⎕EX'data'
               :Else ⍝ Got a WS FULL
-                  ∘∘∘ ⍝ Morten to trace this
                   split←1 ⍝ We had to go around again
                   blksize←blksize(⌈÷)2
+                  ⎕←(⍕⎕AI[3]),': block size reduced: ',⍕blksize
+                  :If blksize<100000
+                      ∘∘∘
+                  :EndIf
               :EndTrap
           :Until offset≥numrecs
      
-          :If split
-              r←r[;1]groupfn r[;2]
+          :If split ⍝ re-summarize partial results
+              r←r[;groupix]groupfn r[;colix]
           :EndIf
       :EndFor
     ∇

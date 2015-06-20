@@ -16,6 +16,7 @@
       path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
       ⎕←'Testing vecdb version ',#.vecdb.Version
       ⎕←Basic
+     
       ⎕←Sharding
     ∇
 
@@ -111,9 +112,21 @@
       assert expect≡db.Query time where select
      
       where←where((6⊃columns)(vals←'one' 'two' 'three' 'seventy')) ⍝ Add filter on char type
-      expect←⌽(⊃∧/data[1 6]∊¨(1 2 3)vals)∘/¨data                 ⍝ Reduced expectations
+      expect←⌽(⊃∧/data[1 6]∊¨(1 2 3)vals)∘/¨data                   ⍝ Reduced expectations
       TEST←'Two expression query'
       assert expect≡db.Query time where select
+     
+      TEST←'Single key, single data group by'
+      expect←(1⊃data){⍺,+/⍵}⌸2⊃data
+      assert expect≡db.Query ⍬'sum col_I2' 'col_I1' ⍝ select sum(col_I2) group by col_I1'
+     
+      TEST←'Single key, multiple data group by'
+      expect←(1⊃data){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
+      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')'col_I1' ⍝ select sum(col_I2) group by col_I1'
+     
+      TEST←'Two key, multiple data group by'
+      expect←(↑[0.5]data[1 5]){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
+      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2) group by col_I1'
      
       ⍝ Test vecdb.Replace
       indices←db.Query where ⍬

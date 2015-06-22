@@ -4,7 +4,7 @@
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared Version←'0.2.1' ⍝ Able to "Group By" one column at a time
+    :Field Public Shared Version←'0.2.2' ⍝ General Group By and Add/Remove Columns
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
     :Field Public Shared TypeNums←83 163 323 645 11 163
     :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'

@@ -1,6 +1,6 @@
 ﻿:Namespace TestVecdb
 
-    ⍝ Updated to version 0.2.0 with sharding
+    ⍝ Updated to version 0.2.2 with sharding, summary queries and add/remove of columns
     ⍝ Call TestVecdb.RunAll to run a full system test
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")

@@ -600,7 +600,7 @@
           :EndTrap
       :Case 'Win'
           'GFA'⎕NA'U4 kernel32.C32|GetFileAttributes* <0T '
-          r←16≡GFA⊂path
+          r←⊃2 16⊤GFA⊂path
       :EndSelect
     ∇
 

@@ -491,28 +491,17 @@
       ⍝   Also deletes
      
       folder←AddSlash folder
-      'Folder not found'⎕SIGNAL(Exists folder)↓22         ⍝ Not there
+      'Folder not found'⎕SIGNAL(Exists folder)↓22              ⍝ Not there
       'Not a vecdb'⎕SIGNAL(Exists file←folder,'meta.vecdb')↓22 ⍝ Paranoia
      
-      tn←0 ⋄ folders←⍬
-      :Trap 0 ⋄ tn←file ⎕FTIE 0
-          folders←⎕FREAD tn 6
-          folders←(Exists¨folders)/folders
-      :EndTrap
-      ⎕FUNTIE tn∩⎕FNUMS
+      :If isWindows
+          ⎕CMD'rmdir "',folder,'" /s /q'
+      :Else
+          ⎕TRAP←0 'S' ⋄ ∘∘∘
+          1 _SH'rm -r ',folder
+      :EndIf
      
-      folders←∪folders,⊂folder ⍝ process sub-folders first
-     
-      :For folder :In folders
-          :If isWindows ⋄ files←⎕CMD'dir "',folder,'*.*" /B /A-D'
-          :Else ⋄ ∘ ⍝ NIX
-          :EndIf
-          :For file :In files
-              f←folder,file
-              f ⎕NERASE f ⎕NTIE 0
-          :EndFor
-          RmDir folder
-      :EndFor
+      r←~Exists folder
     ∇
 
     ∇ r←Erase
@@ -567,9 +556,17 @@
     ∇
 
     :Section Files
+    ⍝ Much of this can be lost in Dyaog 15.0 when new Cross-platform File System Functions Arrive :-)
 
     ∇ r←isWindows
       r←'W'=3 1⊃'.'⎕WG'APLVersion'
+    ∇
+
+    ∇ f←unixfix f
+    ⍝ replaces Windows file separator \ with Unix file separator /
+    ⍝ this approach is mindnumbingly simple and probably dangerous
+    ⍝ which is why we call unixfix very cautiously
+      :If (⊂APLVersion)∊'*nix' 'Mac' ⋄ ((f='\')/f)←'/' ⋄ :EndIf
     ∇
 
     ∇ r←AddSlash path
@@ -577,28 +574,63 @@
       r←path,((¯1↑path)∊'/\')↓⊃isWindows⌽'/\'
     ∇
 
-    ∇ ok←Exists path;GFA
+    ∇ r←Exists path;GFA
     ⍝ Is the argument the name of an existing file or folder?
-      'GFA'⎕NA'U4 kernel32.C32|GetFileAttributes* <0T '
-      ok←(¯1+2*32)≢GFA⊂path
+      :Select APLVersion
+      :Case 'Win'
+          'GFA'⎕NA'U4 kernel32.C32|GetFileAttributes* <0T '
+          r←(¯1+2*32)≢GFA⊂path
+      :Else
+          r←1
+          :Trap 22
+              :Trap 19 ⍝ file access error means file exists
+                  ⎕NUNTIE(unixfix name)⎕NTIE 0
+              :EndTrap
+          :Else
+              r←0
+          :EndTrap
+      :EndSelect
     ∇
 
     ∇ MkDir path;CreateDirectory;GetLastError;err
-      ⍝ Create a folder using Win32 API
-     
-      ⎕NA'I kernel32.C32|CreateDirectory* <0T I4' ⍝ Try for best function
-      →(0≠CreateDirectory path 0)⍴0 ⍝ 0 means "default security attributes"
-      ⎕NA'I4 kernel32.C32|GetLastError'
-      err ⎕SIGNAL⍨'CreateDirectory error:',⍕err←GetLastError
+      ⍝ Create a folder
+      :Select APLVersion
+      :CaseList '*nix' 'Mac'
+          :If ~DirExists path
+              1 _SH'mkdir ',unixfix path
+              ('mkdir error on ',path)⎕SIGNAL 11/⍨~DirExists path
+          :EndIf
+      :Case 'Win'
+          ⎕NA'I kernel32.C32∣CreateDirectory* <0T I4' ⍝ Try for best function
+          →(0≠CreateDirectory path 0)⍴0 ⍝ 0 means "default security attributes"
+          ⎕NA'I4 kernel32.C32|GetLastError'
+          err ⎕SIGNAL⍨'CreateDirectory error:',⍕err←GetLastError
+      :EndSelect
     ∇
 
-    ∇ RmDir path;RemoveDirectory;GetLastError
-     ⍝ Remove folder using Win32 API
-     
-      ⎕NA'I kernel32.C32|RemoveDirectory* <0T'
-      →(0≠RemoveDirectory,⊂path)⍴0
-      ⎕NA'I4 kernel32.C32|GetLastError'
-      11 ⎕SIGNAL⍨'RemoveDirectory error:',⍕GetLastError
+    ∇ {r}←{suppress}_SH cmd
+    ⍝ SH cover to suppress any error messages
+    ⍝ suppress will suppress error from being signaled
+      :If 0=⎕NC'suppress' ⋄ suppress←0 ⋄ :EndIf
+      r←''
+      :Trap 0
+          r←⎕SH cmd,' 2>/dev/null'
+      :Else
+          ('shell command failed: ',cmd)⎕SIGNAL 11/⍨~suppress
+      :EndTrap
+    ∇
+
+    ∇ r←APLVersion
+      :Select 3↑⊃'.'⎕WG'APLVersion'
+      :CaseList 'Lin' 'AIX' 'Sol'
+          r←'*nix'
+      :Case 'Win'
+          r←'Win'
+      :Case 'Mac'
+          r←'Mac'
+      :Else
+          ... ⍝ unknown version
+      :EndSelect
     ∇
     :EndSection ⍝ Files
 

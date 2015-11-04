@@ -590,6 +590,19 @@
           :EndTrap
       :EndSelect
     ∇
+   
+    ∇ r←DirExists path;GFA
+      r←0
+      :Select APLVersion
+      :CaseList '*nix' 'Mac'
+          :Trap 11
+              r←0<⍴_SH'ls -adl ',unixfix path
+          :EndTrap
+      :Case 'Win'
+          'GFA'⎕NA'U4 kernel32.C32|GetFileAttributes* <0T '
+          r←16≡GFA⊂path
+      :EndSelect
+    ∇
 
     ∇ MkDir path;CreateDirectory;GetLastError;err
       ⍝ Create a folder

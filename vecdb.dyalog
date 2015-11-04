@@ -491,17 +491,16 @@
       ⍝   Also deletes
      
       folder←AddSlash folder
-      'Folder not found'⎕SIGNAL(Exists folder)↓22              ⍝ Not there
+      'Folder not found'⎕SIGNAL(DirExists folder)↓22              ⍝ Not there
       'Not a vecdb'⎕SIGNAL(Exists file←folder,'meta.vecdb')↓22 ⍝ Paranoia
      
       :If isWindows
           ⎕CMD'rmdir "',folder,'" /s /q'
       :Else
-          ⎕TRAP←0 'S' ⋄ ∘∘∘
           1 _SH'rm -r ',folder
       :EndIf
      
-      r←~Exists folder
+      r←~DirExists folder
     ∇
 
     ∇ r←Erase
@@ -584,7 +583,7 @@
           r←1
           :Trap 22
               :Trap 19 ⍝ file access error means file exists
-                  ⎕NUNTIE(unixfix name)⎕NTIE 0
+                  ⎕NUNTIE(unixfix path)⎕NTIE 0
               :EndTrap
           :Else
               r←0

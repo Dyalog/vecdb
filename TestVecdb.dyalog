@@ -23,7 +23,7 @@
     ∇ z←Sharding;columns;data;options;params;folder;types;name;db;ix;rotate
      ⍝ Test database with 2 shards
      
-      folder←path,'\',(name←'shardtest'),'\'
+      folder←path,'/',(name←'shardtest'),'/'
      
       :For rotate :In 0 1 2 ⍝ Test with shard key in all positions
      
@@ -67,11 +67,11 @@
       numrecs←5000000 ⍝ 5 million records
       memstats 1      ⍝ Clear memory statistics
      
-      folder←path,'\',(name←'testdb1'),'\'
+      folder←path,'/',(name←'testdb1'),'/'
       ⎕←'Clearing: ',folder
       :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
      
-      ⎕←'Creating: ',folder←path,'\',(name←'testdb1'),'\'
+      ⎕←'Creating: ',folder←path,'/',(name←'testdb1'),'/'
       columns←'col_'∘,¨types←#.vecdb.TypeNames
       assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FBC' ⍝ Types have been added?
       range←2*¯1+8×1 2 4 6 0.25

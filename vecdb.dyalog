@@ -347,7 +347,7 @@
       fns←(SummaryAPLFns,⊂'')[SummaryFns⍳summary]
      
       :If 1=≢cols ⍝ Only one summarized column
-          groupfn←⍎'{(⊃⍺){⍺,',(1⊃fns),'⍵}⌸⊃⍵}'
+          groupfn←⍎'{(↑[0.5]⍺){⍺,',(1⊃fns),'⍵}⌸⊃⍵}'
       :Else       ⍝ More than one summarized column
           z←⊂'r←keys groupfn data'
           :If 1=≢groupix ⋄ z,←⊂'keys←⊃keys' ⋄ :Else ⋄ z,←⊂'keys←↑[0.5]keys' ⋄ :EndIf
@@ -392,6 +392,10 @@
           :If split ⍝ re-summarize partial results
               r←r[;groupix]groupfn r[;colix]
           :EndIf
+     
+          :For char :In {⍵/⍳⍴⍵}'C'=⊃¨Types[(≢groupby)↑allix] ⍝ Symbol Group By cols
+              r[;char]←symbols[allix[char]].{symbol[⍵]}r[;char]
+          :EndFor
       :EndFor
     ∇
 

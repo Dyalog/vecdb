@@ -120,13 +120,23 @@
       expect←(1⊃data){⍺,+/⍵}⌸2⊃data
       assert expect≡db.Query ⍬'sum col_I2' 'col_I1' ⍝ select sum(col_I2) group by col_I1'
      
+      TEST←'Single CHAR key, single data group by'
+      expect←(6⊃data){⍺,+/⍵}⌸2⊃data
+      assert expect≡db.Query ⍬'sum col_I2' 'col_C' ⍝ select sum(col_I2) group by col_C'
+     
       TEST←'Single key, multiple data group by'
       expect←(1⊃data){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
-      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')'col_I1' ⍝ select sum(col_I2) group by col_I1'
+      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')'col_I1' ⍝ select sum(col_I2),max(col_I4) group by col_I1'
+     
+      TEST←'Two key, single data group by'
+      expect←(↑[0.5]data[1 5]){⍺,+/⍵}⌸2⊃data
+      assert expect≡db.Query ⍬'sum col_I2'('col_I1' 'col_B') ⍝ select sum(col_I2) group by col_I1'
      
       TEST←'Two key, multiple data group by'
       expect←(↑[0.5]data[1 5]){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
-      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2) group by col_I1'
+      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2),max(col_I4) group by col_I1,col_B'
+     
+     
      
       ⍝ Test vecdb.Replace
       indices←db.Query where ⍬

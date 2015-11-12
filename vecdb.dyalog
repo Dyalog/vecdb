@@ -514,7 +514,7 @@
       'vecdb is not open'⎕SIGNAL isOpen↓11
      
       {}Close
-      Delete Folder
+      {}Delete Folder
       r←0
     ∇
 

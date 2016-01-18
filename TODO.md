@@ -1,11 +1,14 @@
 # TODO #
 
+1. Add columns after creation
+1. Generalization of Symbol Tables + Add One, Four & Eight Byte Symbol Tables
 1. Enhance queries to support conditional functions... Eg. ('price' '>' 100)('Name' 'like' 'A%')
+1. Prototype parallel queries
 1. Beef up error checking on file creation
 1. Database status reporting function (# shards, records in each, statistics, etc)
-1. Parallel queries using isolates
+1. No Symbol Table Char Type
 1. User Guide
-1. "c" data type (single byte indices)
+1. RESTful / ODATA? API
 1. Timestamped non-overwriting updates
 1. Delete records (AFTER non-overwriting updates)
 1. Database cleanup (throw away history)

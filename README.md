@@ -1,4 +1,4 @@
-# README #
+﻿# README #
 
 `vecdb`
 Current version: 0.2.0
@@ -48,7 +48,6 @@ Query results are returned as a vector with one element per database column, eac
 
 There are ideas to add support for timeseries and versioning. This would include:
 
-1. Add a single-byte indexed Char type (perhaps denoted lowercase "c"), indexing up to 127 unique strings
 1. Support for deleting records
 1. Performing all updates without overwriting data, and tagging old data with the timestamps defining its lifetime, allowing efficient queries on the database as it appeared at any given time in the past.
 1. Built-in support for the computation of aggregate values as part of the parallel query mechanism, based on timeseries or other key values.

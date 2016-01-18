@@ -1,6 +1,6 @@
 ﻿:Namespace TestVecdb
 
-    ⍝ Updated to version 0.2.2 with sharding, summary queries and add/remove of columns
+    ⍝ Updated to version 0.2.3 with sharding, summary queries and add/remove of columns
     ⍝ Call TestVecdb.RunAll to run a full system test
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")
@@ -16,12 +16,12 @@
       path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
       ⎕←'Testing vecdb version ',#.vecdb.Version
       ⎕←Basic
-     
       ⎕←Sharding
     ∇
 
-    ∇ z←Sharding;columns;data;options;params;folder;types;name;db;ix;rotate
+    ∇ z←Sharding;columns;data;options;params;folder;types;name;db;ix;rotate;newcols;colsnow;m
      ⍝ Test database with 2 shards
+     ⍝ Also acts as test for add/remove columns
      
       folder←path,'/',(name←'shardtest'),'/'
      
@@ -49,9 +49,25 @@
           db.Append time columns(3↓¨data)
      
           assert 5=db.Count
-          assert(1 2,⍪⍳¨4 1)≡ix←db.Query('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
+          ix←db.Query('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
+          assert(1 2,⍪⍳¨4 1)≡ix
           TEST←'Read it all back'
           assert data≡db.Read time ix columns
+     
+          newcols←columns,¨'2'
+          TEST←'Add columns'
+          db.AddColumns time newcols types
+          db.Update ix newcols data ⍝ Populate new columns
+          assert(db.Read ix columns)≡(db.Read ix newcols)
+     
+          TEST←'Remove columns'
+          m←(⍳≢columns)≠db.ShardCols ⍝ not the shard col
+          db.RemoveColumns time(m/columns),(~m)/newcols
+          colsnow←((~m)/columns),m/newcols
+          types←((~m)/types),m/types
+          data←((~m)/data),m/data
+          assert(db.(Columns Types))≡(colsnow types) ⍝ should now only have the new columns
+          assert data≡db.Read time ix colsnow      ⍝ Check database is "undamaged"
      
           TEST←'Erase database'
           assert 0={db.Erase}time ⍬
@@ -64,8 +80,11 @@
     ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix
      ⍝ Create and delete some tables
      
-      numrecs←5000000 ⍝ 5 million records
-      memstats 1      ⍝ Clear memory statistics
+      numrecs←50000000 ⍝ 50 million records
+      memstats 1       ⍝ Clear memory statistics
+      :If (8×numrecs)>2000⌶16
+          ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(8×numrecs)÷1000000)',Mb ***'
+      :EndIf
      
       folder←path,'/',(name←'testdb1'),'/'
       ⎕←'Clearing: ',folder
@@ -118,25 +137,23 @@
      
       TEST←'Single key, single data group by'
       expect←(1⊃data){⍺,+/⍵}⌸2⊃data
-      assert expect≡db.Query ⍬'sum col_I2' 'col_I1' ⍝ select sum(col_I2) group by col_I1'
+      assert expect≡db.Query time ⍬'sum col_I2' 'col_I1' ⍝ select sum(col_I2) group by col_I1'
      
       TEST←'Single CHAR key, single data group by'
       expect←(6⊃data){⍺,+/⍵}⌸2⊃data
-      assert expect≡db.Query ⍬'sum col_I2' 'col_C' ⍝ select sum(col_I2) group by col_C'
+      assert expect≡db.Query time ⍬'sum col_I2' 'col_C' ⍝ select sum(col_I2) group by col_C'
      
       TEST←'Single key, multiple data group by'
       expect←(1⊃data){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
-      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')'col_I1' ⍝ select sum(col_I2),max(col_I4) group by col_I1'
+      assert expect≡db.Query time ⍬('sum col_I2' 'max col_I4')'col_I1' ⍝ select sum(col_I2),max(col_I4) group by col_I1'
      
       TEST←'Two key, single data group by'
       expect←(↑[0.5]data[1 5]){⍺,+/⍵}⌸2⊃data
-      assert expect≡db.Query ⍬'sum col_I2'('col_I1' 'col_B') ⍝ select sum(col_I2) group by col_I1'
+      assert expect≡db.Query time ⍬'sum col_I2'('col_I1' 'col_B') ⍝ select sum(col_I2) group by col_I1'
      
       TEST←'Two key, multiple data group by'
       expect←(↑[0.5]data[1 5]){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
-      assert expect≡db.Query ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2),max(col_I4) group by col_I1,col_B'
-     
-     
+      assert expect≡db.Query time ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2),max(col_I4) group by col_I1,col_B'
      
       ⍝ Test vecdb.Replace
       indices←db.Query where ⍬

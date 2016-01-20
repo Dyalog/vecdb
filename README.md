@@ -1,9 +1,7 @@
 ﻿# README #
 
 `vecdb`
-Current version: 0.2.0
-
-**Warning: Version 0.2** adds support for SHARDING, and introduces changes to the database format which are not upwards compatible.
+Current version: 0.2.3
 
 ### What is this repository for? ###
 `vecdb` is a simple "columnar database": each column in the database is stored in a single memory-mapped files. It is written in and for Dyalog APL as a tool on which to base new applications which need to generate and query very large amounts of data and do a large number of high performance reads, but do not need a full set of RDBMS features. In particuler, there is no "transactional" storage mechanism, and no ability to join tables built-in to the database.
@@ -80,5 +78,5 @@ Please read doc\Implementation.md before continuing.
 ### Key Collaborators ###
 
 * mkrom@dyalog.com
+* nicolas@dyalog.com
 * stf@apl.it
-

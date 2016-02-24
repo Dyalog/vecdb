@@ -19,7 +19,7 @@
       ⎕←Sharding
     ∇
 
-    ∇ z←Sharding;columns;data;options;params;folder;types;name;db;ix;rotate;newcols;colsnow;m
+    ∇ z←Sharding;columns;data;options;params;folder;types;name;db;ix;rotate;newcols;colsnow;m;db1;db2;ix2;ix1;t;i
      ⍝ Test database with 2 shards
      ⍝ Also acts as test for add/remove columns
      
@@ -67,9 +67,26 @@
           types←((~m)/types),m/types
           data←((~m)/data),m/data
           assert(db.(Columns Types))≡(colsnow types) ⍝ should now only have the new columns
-          assert data≡db.Read time ix colsnow      ⍝ Check database is "undamaged"
+          assert data≡db.Read time ix colsnow        ⍝ Check database is "undamaged"
+     
+          db.Close
+     
+          ⍝ Now open shards individually
+          db1←⎕NEW #.vecdb(folder 1)
+          db2←⎕NEW #.vecdb(folder 2)
+          ix1←db1.Query('Name'((colsnow⍳⊂'Name')⊃data))⍬ ⍝ Find all records
+          ix2←db2.Query('Name'((colsnow⍳⊂'Name')⊃data))⍬ ⍝ ditto
+          assert(1 2,⍪⍳¨4 1)≡ix1⍪ix2
+          assert data≡⊃,¨/(db1 db2).Read(ix1 colsnow)(ix2 colsnow)
+     
+          t←4↓¨data
+          'data may only be appended to opened shards'db1.Append expecterror colsnow t
+          t[i]←⌽¨¨t[i←colsnow⍳⊂'Flag2']
+          'new strings not allowed unless all shards are open'db2.Append expecterror colsnow t
+          z←(db1 db2).Close
      
           TEST←'Erase database'
+          db←⎕NEW #.vecdb(,⊂folder)
           assert 0={db.Erase}time ⍬
      
       :EndFor ⍝ rotate
@@ -80,7 +97,7 @@
     ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix
      ⍝ Create and delete some tables
      
-      numrecs←50000000 ⍝ 50 million records
+      numrecs←10000000 ⍝ 10 million records
       memstats 1       ⍝ Clear memory statistics
       :If (8×numrecs)>2000⌶16
           ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(8×numrecs)÷1000000)',Mb ***'
@@ -111,7 +128,7 @@
       assert 0=db.isOpen
      
       TEST←'Reopen database'
-      db←⎕NEW time #.vecdb(,⊂folder) ⍝ Open it again
+      db←(⎕NEW time)#.vecdb(,⊂folder) ⍝ Open it again
       assert db.isOpen
       assert db.Count=recs
       TEST←'Reading them back:'
@@ -206,6 +223,12 @@
           z←⍺ ⍺⍺ ⍵
           o←output(⍕⎕AI[3]-t),'ms',⎕UCS 10
           z
+      }
+
+      expecterror←{
+          0::⎕SIGNAL(⍺≡⊃⎕DMX.DM)↓11
+          z←⍺⍺ ⍵
+          ⎕SIGNAL 11
       }
 
 :EndNamespace

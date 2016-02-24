@@ -4,14 +4,14 @@
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared Version←'0.2.3' ⍝ General Group By and Add/Remove Columns
+    :Field Public Shared Version←'0.2.4' ⍝ Added ability to open selected shards
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
     :Field Public Shared TypeNums←83 163 323 645 11 163
     :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
     :Field Public Shared SummaryAPLFns←'+/' '⌈/' '⌊/' '≢'
     :EndSection ⍝ Constants
 
-    :Section Instance Fields
+    :Section Instance Fields            ⍝ The fact that these are public does not mean it is safe to change them
     :Field Public Name←''
     :Field Public Folder←''             ⍝ Where is it
     :Field Public BlockSize←100000      ⍝ Small while we test (must be multiple of 8)
@@ -21,6 +21,8 @@
     :Field Public ShardFolders←⍬        ⍝ List of Shard Folders
     :Field Public ShardFn←⍬             ⍝ Shard Calculation Function
     :Field Public ShardCols←⍬           ⍝ ShardFn input column indices
+    :Field Public ShardSelected←⍬       ⍝ Shards selected
+    :Field Private AllShards←0          ⍝ Are all Shards in use?
 
     :Field _Columns←⍬
     :Field _Types←⍬
@@ -54,17 +56,21 @@
 
     :EndSection
 
-    ∇ findshard
+    ∇ Open(folder)
+      :Implements constructor
+      :Access Public
      
+      OpenFull(folder ⍬) ⍝ Open all shards
     ∇
-
-    ∇ Open(folder);tn;file;props;shards;n;s;i
+    
+    ∇ OpenFull(folder shards);tn;file;props;shards;n;s;i
     ⍝ Open an existing database
      
       :Implements constructor
       :Access Public
      
       folder←AddSlash folder
+      shards←,shards
      
       :Trap 0 ⋄ tn←(file←folder,'meta.vecdb')⎕FSTIE 0
       :Else ⋄ ('Unable to open ',file)⎕SIGNAL 11
@@ -75,6 +81,14 @@
       ⍎'(',(⍕1⊃props),')←2⊃props'
       n←≢_Columns
       s←≢ShardFolders
+     
+      :If 0=⍴shards     ⍝ No explicit selection of shards
+          ShardSelected←⍳s
+      :Else
+          'Invalid Shard Selection'⎕SIGNAL(∧/shards∊⍳s)↓11
+          ShardSelected←shards
+      :EndIf
+      AllShards←s=≢ShardSelected
      
       Shards←⎕NS¨¨s⍴⊂n⍴⊂''
       Shards.name←s⍴⊂_Columns                ⍝ Column Names
@@ -100,7 +114,7 @@
       types←TypeNums[TypeNames⍳Types]
       _Counts←⎕NS¨(≢Shards)⍴⊂⍬
      
-      :For i :In ⍳≢Shards
+      :For i :In ShardSelected
           s←i⊃Shards
           _Counts[i].counter←645 1 ⎕MAP((i⊃ShardFolders),'counters.vecdb')'W' ⍝ Map record counter
           :For col :In ⍳≢s
@@ -128,7 +142,7 @@
 
     ∇ make6(name folder columns types options data)
       :Implements constructor
-      :Access Public
+      :Access Public      
       0 CreateOrExtend name folder columns types options data
       Open,⊂folder      ⍝ now open it properly
     ∇
@@ -327,6 +341,7 @@
     ∇ {r}←AddColumns(columns types)
       :Access Public
      
+      'Not allowed unless all shards are open'⎕SIGNAL AllShards↓11
       1 CreateOrExtend Name Folder columns types''⍬
       Close ⋄ Open,⊂Folder ⍝ Reopen - might want to optimise this later?
       r←⍬
@@ -335,6 +350,7 @@
     ∇ {r}←RemoveColumns columns;tn;keep;metafile;f;c;colix;file;sf;m;sym
       :Access Public
      
+      'Not allowed unless all shards are open'⎕SIGNAL AllShards↓11
       :If ∨/m←~columns∊_Columns
           ('Columns not found:',⍕m/columns)⎕SIGNAL 11
       :EndIf
@@ -399,7 +415,7 @@
      
       r←0 2⍴0 ⍝ (shard indices)
      
-      :For s :In ⍳≢Shards
+      :For s :In ShardSelected
           Cols←s⊃Shards
           count←⊃(s⊃_Counts).counter
           ix←⎕NULL
@@ -498,12 +514,13 @@
       ⍝ Read specified indices of named columns
       :Access Public
      
-      :If 1=⍴⍴ix ⋄ ix←1,⍪⊂ix ⋄ :EndIf ⍝ Single Shard?
+      :If 1=⍴⍴ix ⋄ ix←1,⍪⊂ix ⋄ :EndIf    ⍝ Single Shard?
       :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple column name
       ⎕SIGNAL/ValidateColumns cols
       cix←Columns⍳cols
       r←(⍴cix)⍴⊂⍬
      
+      'Data found in unopened shard!'⎕SIGNAL(∧/ix[;1]∊ShardSelected)↓11
       :For (s indices) :In ↓ix
           :If indices≡⎕NULL ⋄ r←r,¨(s⊃_Counts).counter↑¨(s⊃Shards)[cix].vector
           :Else ⋄ r←r,¨(s⊃Shards)[cix].{vector[⍵]}⊂indices ⋄ :EndIf
@@ -534,6 +551,7 @@
       data←cix IndexSymbols data ⍝ Char to Symbol indices
      
       (shards data)←(⍳≢_Columns)ShardData data
+      'data may only be appended to opened shards'⎕SIGNAL(∧/shards∊ShardSelected)↓11
      
       :For s :In shards
           d←data[;shards⍳s]
@@ -576,7 +594,8 @@
           data←↑p∘⊂¨data
       :EndIf
      
-      :For i :In ⍳≢ix        ⍝ Each partition
+      'data must be in opened shards!'⎕SIGNAL(∧/ix[;1]∊ShardSelected)↓11
+      :For i :In ⍳≢ix        ⍝ Each shard
           (s indices)←ix[i;]
           (⊂indices)((s⊃Shards)[cix]).{vector[⍺]←⍵}data[;i]
       :EndFor
@@ -590,7 +609,7 @@
       ⍝   Also deletes
      
       folder←AddSlash folder
-      'Folder not found'⎕SIGNAL(DirExists folder)↓22              ⍝ Not there
+      'Folder not found'⎕SIGNAL(DirExists folder)↓22           ⍝ Not there
       'Not a vecdb'⎕SIGNAL(Exists file←folder,'meta.vecdb')↓22 ⍝ Paranoia
      
       :If isWindows
@@ -606,6 +625,7 @@
       :Access Public
       ⍝ /// needs error trapping
      
+      'all shards must be open'⎕SIGNAL AllShards↓11
       'vecdb is not open'⎕SIGNAL isOpen↓11
      
       {}Close
@@ -617,6 +637,7 @@
       ⍝ Convert values to symbol indices, and update the file if necessary
      
       :If ∨/m←(≢ns.symbol)<ix←ns.SymbolIndex values   ⍝ new strings found
+          'new strings not allowed unless all shards are open'⎕SIGNAL AllShards↓11
           ns.symbol,←∪m/values             ⍝ Update in-memory symbol table
           ns.symbol PutSymbols ns.file     ⍝ ... update the symbol file
           ns.(SymbolIndex←symbol∘⍳)        ⍝ ... define new hashed lookup function

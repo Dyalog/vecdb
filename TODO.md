@@ -4,8 +4,6 @@
 
 List updated February 23rd, 2016.
 
-1. Allow mapping of column values using a 2-column matrix before use (like a join but using a table provided by the client)
-1. Open vecdb, limiting use to selected shards (1st step on way to support parallel queries)
 1. Parallel queries
 
 ## To be done sometime later ##

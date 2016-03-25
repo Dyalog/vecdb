@@ -46,7 +46,7 @@
           assert(3↑¨data)≡db.Read(1 2⍴1(1 2 3))columns ⍝ All went into shard #1
      
           TEST←'Append last 2 records'
-          db.Append time columns(3↓¨data)
+          z←db.Append time columns(3↓¨data)
      
           assert 5=db.Count
           ix←db.Query('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
@@ -56,20 +56,20 @@
      
           newcols←columns,¨'2'
           TEST←'Add columns'
-          db.AddColumns time newcols types
-          db.Update ix newcols data ⍝ Populate new columns
+          z←db.AddColumns time newcols types
+          z←db.Update ix newcols data ⍝ Populate new columns
           assert(db.Read ix columns)≡(db.Read ix newcols)
      
           TEST←'Remove columns'
           m←(⍳≢columns)≠db.ShardCols ⍝ not the shard col
-          db.RemoveColumns time(m/columns),(~m)/newcols
+          z←db.RemoveColumns time(m/columns),(~m)/newcols
           colsnow←((~m)/columns),m/newcols
           types←((~m)/types),m/types
           data←((~m)/data),m/data
           assert(db.(Columns Types))≡(colsnow types) ⍝ should now only have the new columns
-          assert data≡db.Read time ix colsnow        ⍝ Check database is "undamaged"
+          assert data≡db.Read ix colsnow        ⍝ Check database is "undamaged"
      
-          db.Close
+          z←db.Close
      
           ⍝ Now open shards individually
           db1←⎕NEW #.vecdb(folder 1)
@@ -94,7 +94,7 @@
       z←'Sharding Tests Completed'
     ∇
 
-    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix
+    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square
      ⍝ Create and delete some tables
      
       numrecs←10000000 ⍝ 10 million records
@@ -166,11 +166,33 @@
      
       TEST←'Two key, single data group by'
       expect←(↑[0.5]data[1 5]){⍺,+/⍵}⌸2⊃data
-      assert expect≡db.Query time ⍬'sum col_I2'('col_I1' 'col_B') ⍝ select sum(col_I2) group by col_I1'
+      assert expect≡db.Query time ⍬'sum col_I2'('col_I1' 'col_B') ⍝ select sum(col_I2) group by col_I1, col_B'
      
       TEST←'Two key, multiple data group by'
       expect←(↑[0.5]data[1 5]){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
       assert expect≡db.Query time ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2),max(col_I4) group by col_I1,col_B'
+     
+      ⍝ Test calculated columns
+      (I1 Odd)←{⍵(2|⍵)}∪1⊃data              ⍝ Mappings of I1 column (with values in range 0…127)
+      db.AddCalc'OddI1' 'col_I1' 'B' 'map'(I1 Odd) ⍝ name source type calculation data
+      db.AddCalc'SquareI1' 'col_I1' 'I2' '{⍵*2}'
+     
+      assert Odd≡db.Calc'OddI1'I1           ⍝ Check that we perform a calculation
+      TEST←'Select calculated column'
+      expect←{↓⍉(⍵∘.*1 2),2|⍵}1⊃data
+      assert expect≡db.Query time ⍬('col_I1' 'SquareI1' 'OddI1') ⍝ select col_I1, SquareI1, OddI1
+     
+      TEST←'Group by calculation'
+      expect←(allodd←2|1⊃data){⍺,+/⍵}⌸2⊃data
+      assert expect≡db.Query time ⍬'sum col_I2' 'OddI1'      ⍝ select sum(col_i2) group by OddI1
+      TEST←'Group by 1 calc, filter on another'
+      sel←(square←×⍨1⊃data)∊1 4 9 ⍝ where (I2*2)∊1 4 9
+      expect←(sel/square){⍺,+/⍵}⌸sel/2⊃data
+      assert expect≡db.Query time('SquareI1'(1 4 9))'sum col_I2' 'SquareI1' ⍝ select sum(col_i2) group by SquareI1 where SquareI1∊1 4 9
+     
+      db.RemoveCalc'OddI1'
+      ⍝ /// More calc column QA required
+      ⍝ /// Do not allow calcs on character columns
      
       ⍝ Test vecdb.Replace
       indices←db.Query where ⍬

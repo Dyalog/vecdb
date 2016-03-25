@@ -4,10 +4,11 @@
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared Version←'0.2.4' ⍝ Added ability to open selected shards
+    :Field Public Shared Version←'0.2.5' ⍝ Added ability to use Calculated columns
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
     :Field Public Shared TypeNums←83 163 323 645 11 163
     :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
+    :Field Public Shared CalcFns←,⊂'map'
     :Field Public Shared SummaryAPLFns←'+/' '⌈/' '⌊/' '≢'
     :EndSection ⍝ Constants
 
@@ -31,19 +32,20 @@
     :EndSection ⍝ Instance Fields
 
     fileprops←'Name' 'BlockSize' ⍝ To go in comp 4 of meta.vecdb
+    eis←{(≡⍵)∊0 1:⊂,⍵ ⋄ ⍵}       ⍝ enclose if simple
 
     :Section Properties
     :Property Columns
     :Access Public
         ∇ r←get
-          r←_Columns
+          r←_Columns,_CalcCols
         ∇
     :EndProperty
 
     :Property Types
     :Access public
         ∇ r←get
-          r←_Types
+          r←_Types,_CalcTypes
         ∇
     :EndProperty
 
@@ -51,6 +53,14 @@
     :Access public
         ∇ r←get
           r←⊃+/_Counts.counter
+        ∇
+    :EndProperty
+
+    :Property Mappings
+    ⍝ /// delete me?
+    :Access Public
+        ∇ r←get
+          r←_Mappings.(_sources(_sourceix{⊂⍵}⌸_targets))
         ∇
     :EndProperty
 
@@ -62,11 +72,120 @@
      
       OpenFull(folder ⍬) ⍝ Open all shards
     ∇
-    
+
+    ∇ InitCalcs tn;i;calc;spec
+    ⍝ Extract calulation data from meta file
+     
+      :If 8=2⊃⎕FSIZE tn ⍝ If File format pre-dates calculated columns
+          'unused'⎕FAPPEND tn ⍝ 8
+          'unused'⎕FAPPEND tn ⍝ 9
+          (⍬ ⍬ ⍬)⎕FAPPEND tn  ⍝ 10 Calc Col Names, Source Columns, Data Type
+      :EndIf
+     
+      (_CalcCols _CalcSources _CalcTypes)←⎕FREAD tn,10 ⍝ Calculated column definitions
+      (_CalcSpace←⎕NS'').⎕DF'[vecdb calc work space]'
+     
+      :For i :In ⍳≢_CalcCols  ⍝ Run setup for each calculated coumn
+          (calc spec)←⎕FREAD tn,10+i
+          :If '{'=⊃calc        ⍝ user-defined
+              ⍎'_CalcSpace.',(i⊃_CalcCols),'_Spec←spec' ⍝ Store data
+              ⍎'_CalcSpace.',(i⊃_CalcCols),'←',calc     ⍝ Define function
+          :Else
+              ⍎'(i⊃_CalcCols) ',calc,'_Setup spec'
+          :EndIf
+      :EndFor
+    ∇
+
+    ∇ name map_Setup(from to)
+    ⍝ Setup for a "mapped" column
+     
+      ⍎'_CalcSpace.',name,'_find←from∘⍳'
+      ⍎'_CalcSpace.',name,'←to∘{⍺⌷⍨⊂',name,'_find ⍵}'
+    ∇
+
+    ∇ r←AddCalc spec;name;source;type;calc;file;tn;i
+      :Access Public
+     
+      'not allowed unless all shards are open'⎕SIGNAL AllShards↓11
+      (name source type calc spec)←5↑,¨spec,⍬ ⍬
+     
+      'unknown source column'⎕SIGNAL((⊂source)∊_Columns)↓11
+      'unknown data type'⎕SIGNAL((⊂type)∊TypeNames)↓11
+     
+      :If '{'≠1⊃calc
+          :Select calc
+          :Case 'map'
+              :If 2≠⍴spec
+              :OrIf ≢/≢¨spec
+                  'map source and target must have the same length'⎕SIGNAL 11
+              :EndIf
+          :Else
+              ('Unknown standard calculation: ',calc)⎕SIGNAL 11
+          :EndSelect
+      :EndIf
+     
+      file←Folder,'meta.vecdb'
+      ⎕FHOLD tn←file ⎕FSTIE 0
+      (_CalcCols _CalcSources _CalcTypes)←⎕FREAD tn,10 ⍝ Calculated column definitions
+     
+      :If (≢_CalcCols)≥i←_CalcCols⍳⊂name ⍝ Existing source?
+          (i⊃_CalcSources)←source
+          (i⊃_CalcTypes)←type
+          (_CalcCols _CalcSources _CalcTypes)⎕FREPLACE tn,10
+          (calc spec)⎕FREPLACE tn,10+i
+     
+      :Else                              ⍝ New source
+          ((_CalcCols _CalcSources _CalcTypes),∘⊂¨name source type)⎕FREPLACE tn,10
+          :If (10+i)=2⊃⎕FSIZE tn         ⍝ Append or replace?
+              (calc spec)⎕FAPPEND tn
+          :Else ⋄ (calc spec)⎕FREPLACE tn,10+i
+          :EndIf
+      :EndIf
+     
+      InitCalcs tn ⍝ re-read all from file (optimise later if necessary)
+      ⎕FUNTIE tn ⍝ Also unholds it
+    ∇
+
+    ∇ r←RemoveCalc name;file;tn;m;i;cn
+      :Access Public
+     
+      'not allowed unless all shards are open'⎕SIGNAL AllShards↓11
+      'calc not found'⎕SIGNAL((⊂name)∊_CalcCols)↓11
+     
+      file←Folder,'meta.vecdb'
+      ⎕FHOLD tn←file ⎕FSTIE 0
+      (_CalcCols _CalcSources _CalcTypes)←⎕FREAD tn,10 ⍝ Calculated column definitions
+      i←(m←~_CalcCols∊⊂name)⍳0
+      (m∘/¨_CalcCols _CalcSources _CalcTypes)⎕FREPLACE tn,10
+     
+      :For cn :In ⌽i↓10+⍳≢_CalcCols
+          (⎕FREAD tn,cn)⎕FREPLACE tn,cn-1 ⍝ Copy following specs down
+      :EndFor
+     
+      :If (11+≢_CalcCols)=2⊃⎕FSIZE tn      ⍝ Did we stop using the last component?
+          ⎕FDROP tn,¯1
+      :EndIf
+     
+      InitCalcs tn ⍝ re-read all from file (optimise later if necessary)
+      ⎕FUNTIE tn ⍝ Also unholds it
+    ∇
+
+    ∇ r←Calc(name data)
+      :Access Public
+     
+      'calculation not found'⎕SIGNAL((≢_CalcCols)<i←_CalcCols⍳⊂name)⍴11
+     
+      :Trap 999
+          r←(_CalcSpace⍎name)data
+      :Else
+          (⊃⎕DMX.DM)⎕SIGNAL ⎕DMX.EN
+      :EndTrap
+    ∇
+
     ∇ OpenFull(folder shards);tn;file;props;shards;n;s;i
     ⍝ Open an existing database
      
-      :Implements constructor
+      :Implements Constructor
       :Access Public
      
       folder←AddSlash folder
@@ -76,6 +195,7 @@
       :Else ⋄ ('Unable to open ',file)⎕SIGNAL 11
       :EndTrap
       (props(_Columns _Types)ShardFolders(ShardFn ShardCols))←⎕FREAD tn(4 5 6 7)
+      InitCalcs tn
       ⎕FUNTIE tn
      
       ⍎'(',(⍕1⊃props),')←2⊃props'
@@ -142,7 +262,7 @@
 
     ∇ make6(name folder columns types options data)
       :Implements constructor
-      :Access Public      
+      :Access Public
       0 CreateOrExtend name folder columns types options data
       Open,⊂folder      ⍝ now open it properly
     ∇
@@ -338,19 +458,19 @@
       :EndIf
     ∇
 
-    ∇ {r}←AddColumns(columns types)
+    ∇ {r}←AddColumns(columns types);z
       :Access Public
      
-      'Not allowed unless all shards are open'⎕SIGNAL AllShards↓11
+      'not allowed unless all shards are open'⎕SIGNAL AllShards↓11
       1 CreateOrExtend Name Folder columns types''⍬
-      Close ⋄ Open,⊂Folder ⍝ Reopen - might want to optimise this later?
+      z←Close ⋄ Open,⊂Folder ⍝ Reopen - might want to optimise this later?
       r←⍬
     ∇
-     
+
     ∇ {r}←RemoveColumns columns;tn;keep;metafile;f;c;colix;file;sf;m;sym
       :Access Public
      
-      'Not allowed unless all shards are open'⎕SIGNAL AllShards↓11
+      'not allowed unless all shards are open'⎕SIGNAL AllShards↓11
       :If ∨/m←~columns∊_Columns
           ('Columns not found:',⍕m/columns)⎕SIGNAL 11
       :EndIf
@@ -396,7 +516,7 @@
       r←⍬
     ∇
 
-    ∇ r←Query args;where;cols;groupby;col;value;ix;j;s;count;Data;Cols;summary;m;i
+    ∇ r←Query args;where;cols;groupby;col;value;ix;j;s;count;Data;Cols;summary;m;i;f;cix;calc
       :Access Public
      
       (where cols groupby)←3↑args,(≢args)↓⍬ ⍬ ⍬
@@ -422,12 +542,26 @@
      
           :For (col value) :In where ⍝ AND them all together
               j←Columns⍳⊂col
+              :If calc←(≢_CalcCols)≥cix←_CalcCols⍳⊂col
+                  f←⍎'_CalcSpace.',col
+                  j←_Columns⍳_CalcSources[cix]
+              :Else
+                  f←⊢
+              :EndIf
+     
               :If 'C'=⊃j⊃Types ⍝ Char
                   value←symbols[j].SymbolIndex value    ⍝ v15.0: (j⊃symbols)⍳value
               :EndIf
               ('Invalid column name(s): ',⍕col)⎕SIGNAL((⊂col)∊Columns)↓11
-              :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(count↑Cols[j].vector)∊value
-              :Else ⋄ ix/⍨←Cols[j].vector[ix]∊value
+     
+              :If calc ⍝ /// block repeated in case f←⊢ would materialise data in ws
+                  :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(f count↑Cols[j].vector)∊value
+                  :Else ⋄ ix/⍨←(f Cols[j].vector[ix])∊value
+                  :EndIf
+              :Else
+                  :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(count↑Cols[j].vector)∊value
+                  :Else ⋄ ix/⍨←(Cols[j].vector[ix])∊value
+                  :EndIf
               :EndIf
      
               :If 0=⍴ix ⋄ :Leave ⋄ :EndIf
@@ -447,11 +581,15 @@
       :EndIf
     ∇
 
-    ∇ r←Summarize(ix summary cols groupby);char;m;num;s;indices;fns;cix;allix;allcols;numrecs;blksize;offset;groupfn;t;multi;split;data;recs;groupix;colix;z
+    ∇ r←Summarize(ix summary cols groupby);char;m;num;s;indices;fns;cix;allix;allcols;numrecs;blksize;offset;groupfn;t;multi;split;data;recs;groupix;colix;z;sourceix;sourcecols;mapix;calccols;calcix;c
       ⍝ Read and Summarize specified indices of named columns
       ⍝ Very similar to Read, but not public - called by Query
      
-      allix←Columns⍳allcols←groupby∪cols
+      allix←_Columns⍳allcols←groupby∪cols
+      :If 0≠⍴calccols←((≢_CalcCols)≥calcix←_CalcCols⍳allcols)/⍳⍴allix
+          allix[calccols]←_Columns⍳_CalcSources[calcix[calccols]] ⍝ source columns for calculated cols
+      :EndIf
+     
       groupix←allcols⍳groupby
       colix←allcols⍳cols
      
@@ -487,6 +625,10 @@
                       data←(s⊃Shards)[allix].{vector[⍵]}⊂recs↑offset↓indices
                   :EndIf
      
+                  :For c :In calccols ⍝ /// equivalent code exists in Read: refactor someday?
+                      (c⊃data)←⍎'_CalcSpace.',(calcix[c]⊃_CalcCols),' c⊃data'
+                  :EndFor
+     
                   r⍪←data[groupix]groupfn data[colix]
                   offset+←blksize
                   ⎕EX'data'
@@ -510,14 +652,18 @@
       :EndFor
     ∇
 
-    ∇ r←Read(ix cols);char;m;num;cix;s;indices
+    ∇ r←Read(ix cols);char;m;num;cix;s;indices;t;calcix;calccols;c
       ⍝ Read specified indices of named columns
       :Access Public
      
       :If 1=⍴⍴ix ⋄ ix←1,⍪⊂ix ⋄ :EndIf    ⍝ Single Shard?
       :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple column name
       ⎕SIGNAL/ValidateColumns cols
-      cix←Columns⍳cols
+     
+      cix←_Columns⍳cols
+      :If 0≠⍴calccols←((≢_CalcCols)≥calcix←_CalcCols⍳cols)/⍳⍴cols
+          cix[calccols]←_Columns⍳_CalcSources[calcix[calccols]] ⍝ source columns for calculated cols
+      :EndIf
       r←(⍴cix)⍴⊂⍬
      
       'Data found in unopened shard!'⎕SIGNAL(∧/ix[;1]∊ShardSelected)↓11
@@ -529,6 +675,10 @@
       :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Types[cix] ⍝ Symbol transation
           r[char]←symbols[cix[char]].{symbol[⍵]}r[char]
       :EndIf
+     
+      :For c :In calccols
+          (c⊃r)←⍎'_CalcSpace.',(calcix[c]⊃_CalcCols),' c⊃r'
+      :EndFor
     ∇
 
     ∇ r←ValidateColumns cols;bad

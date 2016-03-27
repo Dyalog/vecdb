@@ -1,6 +1,6 @@
 ﻿:Namespace TestVecdb
 
-    ⍝ Updated to version 0.2.3 with sharding, summary queries and add/remove of columns
+    ⍝ Updated to version 0.2.5 with mapped columns
     ⍝ Call TestVecdb.RunAll to run a full system test
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")
@@ -94,7 +94,7 @@
       z←'Sharding Tests Completed'
     ∇
 
-    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square
+    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square;charvalues;charsmapped;zzz
      ⍝ Create and delete some tables
      
       numrecs←10000000 ⍝ 10 million records
@@ -113,7 +113,7 @@
       range←2*¯1+8×1 2 4 6 0.25
       data←numrecs⍴¨¯1+⍳¨numrecs⌊range
       data←data×0.1*'F'=⊃¨(≢data)↑types ⍝ Make float values where necessary
-      data←data,⊂numrecs⍴{1↓¨(⍵=⊃⍵)⊂⍵}'/zero/one/two/three/four/five/six/seven/eight/nine/ten/eleven/one dozen/thirteen/fourteen/fifteen'
+      data←data,⊂numrecs⍴charvalues←{1↓¨(⍵=⊃⍵)⊂⍵}'/zero/one/two/three/four/five/six/seven/eight/nine/ten/eleven/one dozen/thirteen/fourteen/fifteen'
      
       :If LOG ⋄ ⎕←'Size of input data: ',fmtnum ⎕SIZE'data' ⋄ :EndIf
      
@@ -172,15 +172,21 @@
       expect←(↑[0.5]data[1 5]){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
       assert expect≡db.Query time ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2),max(col_I4) group by col_I1,col_B'
      
-      ⍝ Test calculated columns
+      ⍝ Test calculated / mapped columns
       (I1 Odd)←{⍵(2|⍵)}∪1⊃data              ⍝ Mappings of I1 column (with values in range 0…127)
       db.AddCalc'OddI1' 'col_I1' 'B' 'map'(I1 Odd) ⍝ name source type calculation data
       db.AddCalc'SquareI1' 'col_I1' 'I2' '{⍵*2}'
+      db.AddCalc'ThreeResC' 'col_C' 'C' 'map'(charvalues(charsmapped←16⍴'zero' 'one' 'two')) ⍝ Map on char=>char
      
       assert Odd≡db.Calc'OddI1'I1           ⍝ Check that we perform a calculation
+      assert charsmapped≡db.Calc'ThreeResC'charvalues
+     
       TEST←'Select calculated column'
-      expect←{↓⍉(⍵∘.*1 2),2|⍵}1⊃data
-      assert expect≡db.Query time ⍬('col_I1' 'SquareI1' 'OddI1') ⍝ select col_I1, SquareI1, OddI1
+      expect←({↓⍉(⍵∘.*1 2),2|⍵}1⊃data),⊂('zero' 'one' 'two')[1+3|¯1+charvalues⍳6⊃data]
+      assert expect≡db.Query time ⍬('col_I1' 'SquareI1' 'OddI1' 'ThreeResC') ⍝ select col_I1, SquareI1, OddI1 ThreeResC
+     
+      expect←((≢charvalues)⍴0 1 0)/charvalues
+      assert expect≡∪⊃db.Query('ThreeResC'(⊂'one'))'col_C' ⍝ Where clause on char=>char mapping
      
       TEST←'Group by calculation'
       expect←(allodd←2|1⊃data){⍺,+/⍵}⌸2⊃data

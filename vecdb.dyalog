@@ -96,11 +96,29 @@
       :EndFor
     ∇
 
-    ∇ name map_Setup(from to)
+    ∇ name map_Setup(from to);cix;six;i;n;src;m;col;symbol
     ⍝ Setup for a "mapped" column
      
-      ⍎'_CalcSpace.',name,'_find←from∘⍳'
-      ⍎'_CalcSpace.',name,'←to∘{⍺⌷⍨⊂',name,'_find ⍵}'
+      (cix six)←Columns⍳(⊂name),_CalcSources[_CalcCols⍳⊂name]
+     
+      :If ∧/Types[cix six]∊⊂,'C'          ⍝ Special case char-char map
+     
+          :If cix>n←≢symbols ⋄ symbols,←⎕NS¨(cix-n)⍴⊂'' ⋄ :EndIf ⍝ extend symbol table
+     
+          src←six⊃symbols
+          symbol←src.symbol               ⍝ source symbols
+          m←(≢from)≥i←from⍳symbol         ⍝ mappable symbols
+          (m/symbol)←to[m/i]              ⍝ remap
+     
+          col←cix⊃symbols
+          col.file←0                      ⍝ there is no symbol file
+          col.symbol←symbol               ⍝ Read symbols
+          col.(SymbolIndex←symbol∘⍳)      ⍝ Create lookup function
+     
+      :Else
+          ⍎'_CalcSpace.',name,'_find←from∘⍳'
+          ⍎'_CalcSpace.',name,'←to∘{⍺⌷⍨⊂',name,'_find ⍵}'
+      :EndIf
     ∇
 
     ∇ r←AddCalc spec;name;source;type;calc;file;tn;i
@@ -170,16 +188,22 @@
       ⎕FUNTIE tn ⍝ Also unholds it
     ∇
 
-    ∇ r←Calc(name data)
+    ∇ r←Calc(name data);i;ns;cix;src
       :Access Public
      
       'calculation not found'⎕SIGNAL((≢_CalcCols)<i←_CalcCols⍳⊂name)⍴11
      
-      :Trap 999
-          r←(_CalcSpace⍎name)data
+      :If (≢symbols)≥cix←i+≢_Columns
+      :AndIf 2=(ns←cix⊃symbols).⎕NC'symbol'
+      :AndIf 2=(src←(_Columns⍳_CalcSources[i])⊃symbols).⎕NC'symbol'
+          r←ns.symbol[src.SymbolIndex data]
       :Else
-          (⊃⎕DMX.DM)⎕SIGNAL ⎕DMX.EN
-      :EndTrap
+          :Trap 999
+              r←(_CalcSpace⍎name)data
+          :Else
+              (⊃⎕DMX.DM)⎕SIGNAL ⎕DMX.EN
+          :EndTrap
+      :EndIf
     ∇
 
     ∇ OpenFull(folder shards);tn;file;props;shards;n;s;i
@@ -516,11 +540,13 @@
       r←⍬
     ∇
 
-    ∇ r←Query args;where;cols;groupby;col;value;ix;j;s;count;Data;Cols;summary;m;i;f;cix;calc
+    ∇ r←Query args;where;cols;groupby;col;value;ix;j;s;count;Data;Cols;summary;m;i;f;cix;calc;mapped;c;columns
       :Access Public
      
       (where cols groupby)←3↑args,(≢args)↓⍬ ⍬ ⍬
-      :If 2=≢where ⋄ :AndIf where[1]∊Columns ⍝ just a single constraint?
+      cols←(0≠≢cols)/,,¨eis cols
+      columns←Columns
+      :If 2=≢where ⋄ :AndIf where[1]∊columns ⍝ just a single constraint?
           where←,⊂where
       :EndIf
      
@@ -541,18 +567,27 @@
           ix←⎕NULL
      
           :For (col value) :In where ⍝ AND them all together
-              j←Columns⍳⊂col
-              :If calc←(≢_CalcCols)≥cix←_CalcCols⍳⊂col
-                  f←⍎'_CalcSpace.',col
-                  j←_Columns⍳_CalcSources[cix]
-              :Else
-                  f←⊢
+     
+              :If (≢columns)<j←columns⍳⊂col
+                  ('Invalid column name in where clause: ',⍕col)⎕SIGNAL 11
               :EndIf
      
-              :If 'C'=⊃j⊃Types ⍝ Char
+              mapped←3=symbols[j].⎕NC'SymbolIndex'        ⍝ Is there an index function?
+              f←⊢
+     
+              :If calc←(≢_CalcCols)≥cix←_CalcCols⍳⊂col
+                  :If mapped
+                      value←(symbols[j].symbol∊value)/symbols[_Columns⍳_CalcSources[cix]].symbol
+                      calc←0 ⍝ It is done
+                  :Else
+                      f←⍎'_CalcSpace.',col
+                  :EndIf
+                  j←_Columns⍳_CalcSources[cix]
+              :EndIf
+     
+              :If mapped
                   value←symbols[j].SymbolIndex value    ⍝ v15.0: (j⊃symbols)⍳value
               :EndIf
-              ('Invalid column name(s): ',⍕col)⎕SIGNAL((⊂col)∊Columns)↓11
      
               :If calc ⍝ /// block repeated in case f←⊢ would materialise data in ws
                   :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(f count↑Cols[j].vector)∊value
@@ -652,7 +687,7 @@
       :EndFor
     ∇
 
-    ∇ r←Read(ix cols);char;m;num;cix;s;indices;t;calcix;calccols;c
+    ∇ r←Read(ix cols);char;m;num;cix;s;indices;t;calcix;calccols;c;nss;six
       ⍝ Read specified indices of named columns
       :Access Public
      
@@ -660,23 +695,24 @@
       :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple column name
       ⎕SIGNAL/ValidateColumns cols
      
-      cix←_Columns⍳cols
+      six←cix←Columns⍳cols
       :If 0≠⍴calccols←((≢_CalcCols)≥calcix←_CalcCols⍳cols)/⍳⍴cols
-          cix[calccols]←_Columns⍳_CalcSources[calcix[calccols]] ⍝ source columns for calculated cols
+          six[calccols]←_Columns⍳_CalcSources[calcix[calccols]] ⍝ source columns for calculated cols
       :EndIf
       r←(⍴cix)⍴⊂⍬
      
       'Data found in unopened shard!'⎕SIGNAL(∧/ix[;1]∊ShardSelected)↓11
       :For (s indices) :In ↓ix
-          :If indices≡⎕NULL ⋄ r←r,¨(s⊃_Counts).counter↑¨(s⊃Shards)[cix].vector
-          :Else ⋄ r←r,¨(s⊃Shards)[cix].{vector[⍵]}⊂indices ⋄ :EndIf
+          :If indices≡⎕NULL ⋄ r←r,¨(s⊃_Counts).counter↑¨(s⊃Shards)[six].vector
+          :Else ⋄ r←r,¨(s⊃Shards)[six].{vector[⍵]}⊂indices ⋄ :EndIf
       :EndFor
      
       :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Types[cix] ⍝ Symbol transation
-          r[char]←symbols[cix[char]].{symbol[⍵]}r[char]
+      :AndIf 0≠⍴char←(2=⊃¨(nss←symbols[cix[char]]).⎕NC⊂'symbol')/char
+          r[char]←nss.{symbol[⍵]}r[char]
       :EndIf
      
-      :For c :In calccols
+      :For c :In calccols~char            ⍝ Exclude char-char maps handled above
           (c⊃r)←⍎'_CalcSpace.',(calcix[c]⊃_CalcCols),' c⊃r'
       :EndFor
     ∇

@@ -56,16 +56,6 @@
         ∇
     :EndProperty
 
-    :Property Mappings
-    ⍝ /// delete me?
-    :Access Public
-        ∇ r←get
-          r←_Mappings.(_sources(_sourceix{⊂⍵}⌸_targets))
-        ∇
-    :EndProperty
-
-    :EndSection
-
     ∇ Open(folder)
       :Implements constructor
       :Access Public
@@ -73,8 +63,8 @@
       OpenFull(folder ⍬) ⍝ Open all shards
     ∇
 
-    ∇ InitCalcs tn;i;calc;spec
-    ⍝ Extract calulation data from meta file
+    ∇ InitCalcs tn;i;calc;spec;space;inv
+    ⍝ Extract calculation data from meta file
      
       :If 8=2⊃⎕FSIZE tn ⍝ If File format pre-dates calculated columns
           'unused'⎕FAPPEND tn ⍝ 8
@@ -83,49 +73,60 @@
       :EndIf
      
       (_CalcCols _CalcSources _CalcTypes)←⎕FREAD tn,10 ⍝ Calculated column definitions
-      (_CalcSpace←⎕NS'').⎕DF'[vecdb calc work space]'
+      mappings,←⎕NS¨(≢_CalcCols)⍴⊂'' ⍝ Add mappings
      
       :For i :In ⍳≢_CalcCols  ⍝ Run setup for each calculated coumn
-          (calc spec)←⎕FREAD tn,10+i
-          :If '{'=⊃calc        ⍝ user-defined
-              ⍎'_CalcSpace.',(i⊃_CalcCols),'_Spec←spec' ⍝ Store data
-              ⍎'_CalcSpace.',(i⊃_CalcCols),'←',calc     ⍝ Define function
+          space←(i+≢_Columns)⊃mappings
+          (calc spec inv)←⎕FREAD tn,10+i
+          :If '{'=⊃calc             ⍝ User-defined
+              space.Type←2          ⍝ Calculation
+              space.Spec←spec       ⍝ Store data
+              space⍎'Calc←',calc    ⍝ Define function
+              :If 0≠⍴inv ⋄ space⍎'CalcInv←',inv ⋄ :EndIf ⍝ Define inverse
           :Else
               ⍎'(i⊃_CalcCols) ',calc,'_Setup spec'
           :EndIf
       :EndFor
     ∇
 
-    ∇ name map_Setup(from to);cix;six;i;n;src;m;col;symbol
+    ∇ name map_Setup(from to);cix;six;i;n;src;m;col;symbol;char;calcix
     ⍝ Setup for a "mapped" column
      
-      (cix six)←Columns⍳(⊂name),_CalcSources[_CalcCols⍳⊂name]
+      (cix six)←Columns⍳(⊂name),_CalcSources[calcix←_CalcCols⍳⊂name]
+      (col src)←mappings[cix six]
      
-      :If ∧/Types[cix six]∊⊂,'C'          ⍝ Special case char-char map
+      :If (,'C')≡cix⊃Types                     ⍝ Special case char
+      :AndIf (from≡⍳≢from)∨char←(,'C')≡six⊃Types   ⍝ char-char or "direct" map
      
-          :If cix>n←≢symbols ⋄ symbols,←⎕NS¨(cix-n)⍴⊂'' ⋄ :EndIf ⍝ extend symbol table
+          :If char
+              symbol←src.symbol           ⍝ source symbols
+              m←(≢from)≥i←from⍳symbol     ⍝ mappable symbols
+              (m/symbol)←to[m/i]          ⍝ remap
+          :Else
+              symbol←to
+          :EndIf
      
-          src←six⊃symbols
-          symbol←src.symbol               ⍝ source symbols
-          m←(≢from)≥i←from⍳symbol         ⍝ mappable symbols
-          (m/symbol)←to[m/i]              ⍝ remap
-     
-          col←cix⊃symbols
           col.file←0                      ⍝ there is no symbol file
-          col.symbol←symbol               ⍝ Read symbols
+          col.Type←1                      ⍝ Symbol
+          col.symbol←symbol               ⍝ Store symbol list
           col.(SymbolIndex←symbol∘⍳)      ⍝ Create lookup function
+          col.Source←six                  ⍝ Store the source column
      
       :Else
-          ⍎'_CalcSpace.',name,'_find←from∘⍳'
-          ⍎'_CalcSpace.',name,'←to∘{⍺⌷⍨⊂',name,'_find ⍵}'
+          col.Type←2                      ⍝ Calc/CalcInv
+          col.(to from)←to from
+          col.(SymbolIndex←from∘⍳)
+          col.(TargetIndex←to∘⍳)
+          col.(Calc←to∘{⍺⌷⍨⊂SymbolIndex ⍵})
+          col.(CalcInv←from∘{⍺⌷⍨⊂TargetIndex ⍵})
       :EndIf
     ∇
 
-    ∇ r←AddCalc spec;name;source;type;calc;file;tn;i
+    ∇ r←AddCalc spec;name;source;type;calc;file;tn;i;inv
       :Access Public
      
       'not allowed unless all shards are open'⎕SIGNAL AllShards↓11
-      (name source type calc spec)←5↑,¨spec,⍬ ⍬
+      (name source type calc spec inv)←6↑,¨spec,⍬ ⍬ ⍬
      
       'unknown source column'⎕SIGNAL((⊂source)∊_Columns)↓11
       'unknown data type'⎕SIGNAL((⊂type)∊TypeNames)↓11
@@ -150,13 +151,13 @@
           (i⊃_CalcSources)←source
           (i⊃_CalcTypes)←type
           (_CalcCols _CalcSources _CalcTypes)⎕FREPLACE tn,10
-          (calc spec)⎕FREPLACE tn,10+i
+          (calc spec inv)⎕FREPLACE tn,10+i
      
       :Else                              ⍝ New source
           ((_CalcCols _CalcSources _CalcTypes),∘⊂¨name source type)⎕FREPLACE tn,10
           :If (10+i)=2⊃⎕FSIZE tn         ⍝ Append or replace?
-              (calc spec)⎕FAPPEND tn
-          :Else ⋄ (calc spec)⎕FREPLACE tn,10+i
+              (calc spec inv)⎕FAPPEND tn
+          :Else ⋄ (calc spec inv)⎕FREPLACE tn,10+i
           :EndIf
       :EndIf
      
@@ -188,22 +189,25 @@
       ⎕FUNTIE tn ⍝ Also unholds it
     ∇
 
-    ∇ r←Calc(name data);i;ns;cix;src
+    ∇ r←Calc(name data);i;ns;cix;src;col
       :Access Public
      
       'calculation not found'⎕SIGNAL((≢_CalcCols)<i←_CalcCols⍳⊂name)⍴11
      
-      :If (≢symbols)≥cix←i+≢_Columns
-      :AndIf 2=(ns←cix⊃symbols).⎕NC'symbol'
-      :AndIf 2=(src←(_Columns⍳_CalcSources[i])⊃symbols).⎕NC'symbol'
-          r←ns.symbol[src.SymbolIndex data]
-      :Else
+      col←(cix←i+≢_Columns)⊃mappings
+      :Select col.Type
+      :Case 1 ⍝ Symbol
+          src←mappings[col.Source]
+          r←col.symbol[src.SymbolIndex data]
+      :Case 2 ⍝ Calc
           :Trap 999
-              r←(_CalcSpace⍎name)data
+              r←col.Calc data
           :Else
               (⊃⎕DMX.DM)⎕SIGNAL ⎕DMX.EN
           :EndTrap
-      :EndIf
+      :Else
+          ∘∘∘ ⍝ Internal error - unknown mapping type
+      :EndSelect
     ∇
 
     ∇ OpenFull(folder shards);tn;file;props;shards;n;s;i
@@ -219,11 +223,13 @@
       :Else ⋄ ('Unable to open ',file)⎕SIGNAL 11
       :EndTrap
       (props(_Columns _Types)ShardFolders(ShardFn ShardCols))←⎕FREAD tn(4 5 6 7)
+      n←≢_Columns
+      mappings←⎕NS¨n⍴⊂''
+      mappings.Type←0 ⍝ Not cal'd or mapped (yet)
       InitCalcs tn
       ⎕FUNTIE tn
      
       ⍎'(',(⍕1⊃props),')←2⊃props'
-      n←≢_Columns
       s←≢ShardFolders
      
       :If 0=⍴shards     ⍝ No explicit selection of shards
@@ -241,9 +247,9 @@
      
       :If 0≠⍴ShardFn ⋄ findshard←⍎ShardFn ⋄ :EndIf ⍝ Define shard calculation function
      
-      symbols←⎕NS¨n⍴⊂''
       :For i :In {⍵/⍳⍴⍵}'C'=⊃¨_Types         ⍝ Read symbol files for CHAR fields
-          col←i⊃symbols
+          col←i⊃mappings
+          col.Type←1                         ⍝ symbol map
           col.file←folder,(⍕i),'.symbol'     ⍝ symbol file name in main folder
           col.symbol←GetSymbols col.file     ⍝ Read symbols
           col.(SymbolIndex←symbol∘⍳)         ⍝ Create lookup function
@@ -297,6 +303,7 @@
       create←extend=0   ⍝ for readability
      
     ⍝ Validate column parameters
+      types←,¨types
       'At least one column must be added'⎕SIGNAL(1>≢columns)⍴11
       'Column types and names do not have same length'⎕SIGNAL((≢columns)≠≢types)⍴11
       'Invalid column types - see vecdb.TypeNames'⎕SIGNAL(∧/types∊TypeNames)↓11
@@ -323,19 +330,19 @@
           ShardFolders←AddSlash¨ShardFolders
           ShardCols←,ShardCols
           :If 0≠⍴ShardFn ⋄ findshard←⍎ShardFn ⋄ :EndIf  ⍝ Define shard calculation function
-          (Name _Columns _Types)←name columns types ⍝ Set Class fields
-          symbols←⎕NS¨(≢_Columns)⍴⊂''
+          (Name _Columns _Types)←name columns types     ⍝ Set Class fields
+          mappings←⎕NS¨(≢_Columns)⍴⊂''
      
       :Else ⍝ We are adding columns to an open database
           (_Columns _Types)←(_Columns _Types),¨columns types ⍝ Extend Class fields
-          symbols,←⎕NS¨(≢columns)⍴⊂''
+          mappings,←⎕NS¨(≢columns)⍴⊂''
      
       :EndIf
       newcols←(-≢columns)↑⍳≢_Columns         ⍝ Indices of new coulumns
-      newchars←'C'=⊃¨_Types[newcols]
+      newchars←'C'=⊃¨_Types[newcols]         ⍝ /// Should really be driven off mappings.Type=1 in the future
      
       :For i :In newchars/newcols ⍝ Create symbol files for CHAR fields
-          col←i⊃symbols
+          col←i⊃mappings
           dix←newcols⍳i                       ⍝ data index
           col.symbol←∪dix⊃data                ⍝ Unique symbols in input data
           col.file←folder,(⍕i),'.symbol'      ⍝ Symbol file name in main folder
@@ -408,18 +415,19 @@
      
           :Else
               char←{⍵/⍳⍵}'C'=⊃¨_Types[ShardCols] ⍝ Which of the sharding cols are of type char?
+              ⍝ /// ↑ should be driven off 1=mapping.Type in the future
      
               :If (1=≢char)∧1=≢six ⍝ There is exactly one char shard column...
               ⍝ See whether it is worth running shard function on unique values rather than all data:
-              :AndIf (≢⊃sym←symbols[ShardCols].symbol)<≢⊃data ⍝ ... and fewer unique symbols than records
+              :AndIf (≢⊃sym←mappings[ShardCols].symbol)<≢⊃data ⍝ ... and fewer unique symbols than records
                   s←{⍺ ⍵}⌸(findshard sym)[six⊃data]           ⍝ ... then compute shards on symbols
      
               :Else                ⍝ General case
      
                   :If 0≠≢char ⍝ Are *any* char (then we must turn indices into text)
                       c←six[char] ⍝ index of character shard cols in provided data
-                      data[c]←symbols[ShardCols[char]].{symbol[⍵]}data[c]
-                      ⍝ Is that faster than: data[c]←symbols[ShardCols[char]].symbol[data[c]]
+                      data[c]←mappings[ShardCols[char]].{symbol[⍵]}data[c]
+                      ⍝ Is that faster than: data[c]←mappings[ShardCols[char]].symbol[data[c]]
                   :EndIf
      
                   s←{⍺ ⍵}⌸findshard data[six]
@@ -447,7 +455,7 @@
 
     ∇ r←Close
       :Access Public
-      ⎕EX'Shards' 'symbols' '_Counts'
+      ⎕EX'Shards' 'mappings' '_Counts'
       r←isOpen←0       ⍝ record the fact
     ∇
 
@@ -540,7 +548,7 @@
       r←⍬
     ∇
 
-    ∇ r←Query args;where;cols;groupby;col;value;ix;j;s;count;Data;Cols;summary;m;i;f;cix;calc;mapped;c;columns
+    ∇ r←Query args;where;cols;groupby;col;value;ix;j;s;count;Data;Cols;summary;m;i;f;cix;calc;mapped;c;columns;map
       :Access Public
      
       (where cols groupby)←3↑args,(≢args)↓⍬ ⍬ ⍬
@@ -572,28 +580,33 @@
                   ('Invalid column name in where clause: ',⍕col)⎕SIGNAL 11
               :EndIf
      
-              mapped←3=symbols[j].⎕NC'SymbolIndex'        ⍝ Is there an index function?
+              map←mappings[j]
+              mapped←1=map.Type  ⍝ Mapped or Calculated
               f←⊢
      
               :If calc←(≢_CalcCols)≥cix←_CalcCols⍳⊂col
                   :If mapped
-                      value←(symbols[j].symbol∊value)/symbols[_Columns⍳_CalcSources[cix]].symbol
-                      calc←0 ⍝ It is done
-                  :Else
-                      f←⍎'_CalcSpace.',col
+                      value←(map.symbol∊value)/mappings[_Columns⍳_CalcSources[cix]].symbol
+                      calc←0 ⍝ Do not calculate, we did the map already
+                  :ElseIf 3=⎕NC'map.CalcInv' ⍝ Are we able to calculate the inverse?
+                      value←map.CalcInv value
+                      calc←0 ⍝ Do not calculate: Just search for result of inverse
+                  :Else ⍝ We will need to apply the function to data
+                      f←map.Calc
                   :EndIf
                   j←_Columns⍳_CalcSources[cix]
               :EndIf
      
-              :If mapped
-                  value←symbols[j].SymbolIndex value    ⍝ v15.0: (j⊃symbols)⍳value
+              :If mapped ⍝ Char field, or 'map' calculation
+                  value←mappings[j].SymbolIndex value    ⍝ v15.0: (j⊃mappings)⍳value
               :EndIf
      
-              :If calc ⍝ /// block repeated in case f←⊢ would materialise data in ws
-                  :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(f count↑Cols[j].vector)∊value
+              :If calc ⍝ need to compare with f(x) rather than x
+                  :If ⎕NULL≡ix ⍝ First time round the loop: Compare all values
+                      ix←{⍵/⍳⍴⍵}(f count↑Cols[j].vector)∊value
                   :Else ⋄ ix/⍨←(f Cols[j].vector[ix])∊value
                   :EndIf
-              :Else
+              :Else    ⍝ /// block repeated without f in case f←⊢ would materialise data in ws
                   :If ⎕NULL≡ix ⋄ ix←{⍵/⍳⍴⍵}(count↑Cols[j].vector)∊value
                   :Else ⋄ ix/⍨←(Cols[j].vector[ix])∊value
                   :EndIf
@@ -661,7 +674,7 @@
                   :EndIf
      
                   :For c :In calccols ⍝ /// equivalent code exists in Read: refactor someday?
-                      (c⊃data)←⍎'_CalcSpace.',(calcix[c]⊃_CalcCols),' c⊃data'
+                      (c⊃data)←mappings[(≢_Columns)+calcix[c]].Calc c⊃data
                   :EndFor
      
                   r⍪←data[groupix]groupfn data[colix]
@@ -682,12 +695,12 @@
           :EndIf
      
           :For char :In {⍵/⍳⍴⍵}'C'=⊃¨Types[(≢groupby)↑allix] ⍝ Symbol Group By cols
-              r[;char]←symbols[allix[char]].{symbol[⍵]}r[;char]
+              r[;char]←mappings[allix[char]].{symbol[⍵]}r[;char]
           :EndFor
       :EndFor
     ∇
 
-    ∇ r←Read(ix cols);char;m;num;cix;s;indices;t;calcix;calccols;c;nss;six
+    ∇ r←Read(ix cols);char;m;num;cix;s;indices;t;calcix;calccols;c;nss;six;tix
       ⍝ Read specified indices of named columns
       :Access Public
      
@@ -695,7 +708,7 @@
       :If 1=≡cols ⋄ cols←,⊂cols ⋄ :EndIf ⍝ Single simple column name
       ⎕SIGNAL/ValidateColumns cols
      
-      six←cix←Columns⍳cols
+      tix←six←cix←Columns⍳cols
       :If 0≠⍴calccols←((≢_CalcCols)≥calcix←_CalcCols⍳cols)/⍳⍴cols
           six[calccols]←_Columns⍳_CalcSources[calcix[calccols]] ⍝ source columns for calculated cols
       :EndIf
@@ -707,13 +720,13 @@
           :Else ⋄ r←r,¨(s⊃Shards)[six].{vector[⍵]}⊂indices ⋄ :EndIf
       :EndFor
      
-      :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨Types[cix] ⍝ Symbol transation
-      :AndIf 0≠⍴char←(2=⊃¨(nss←symbols[cix[char]]).⎕NC⊂'symbol')/char
-          r[char]←nss.{symbol[⍵]}r[char]
+      :If 0≠⍴char←{⍵/⍳≢⍵}'C'=⊃¨Types[cix] ⍝ Symbol transation
+      :AndIf 0≠⍴char←(m←2=⊃¨(nss←mappings[cix[char]]).⎕NC⊂'symbol')/char
+          r[char]←(m/nss).{symbol[⍵]}r[char]
       :EndIf
      
       :For c :In calccols~char            ⍝ Exclude char-char maps handled above
-          (c⊃r)←⍎'_CalcSpace.',(calcix[c]⊃_CalcCols),' c⊃r'
+          (c⊃r)←mappings[cix[c]].Calc c⊃r
       :EndFor
     ∇
 
@@ -835,7 +848,7 @@
     ⍝ Convert all char columns to indices
      
       :If 0≠⍴char←{⍵/⍳⍴⍵}'C'=⊃¨_Types[cix]
-          data[char]←symbols[cix[char]]SymbolUpdate¨data[char]
+          data[char]←mappings[cix[char]]SymbolUpdate¨data[char]
       :EndIf
      
     ∇
@@ -861,7 +874,7 @@
     ∇
 
     :Section Files
-    ⍝ Much of this can be lost in Dyaog 15.0 when new Cross-platform File System Functions Arrive :-)
+    ⍝ Much of this can be lost in Dyalog 15.0 when new Cross-platform File System Functions Arrive :-)
 
     ∇ r←isWindows
       r←'W'=3 1⊃'.'⎕WG'APLVersion'

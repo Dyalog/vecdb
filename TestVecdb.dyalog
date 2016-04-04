@@ -94,7 +94,7 @@
       z←'Sharding Tests Completed'
     ∇
 
-    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square;charvalues;charsmapped;zzz
+    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square;charvalues;charsmapped;zzz;OddC
      ⍝ Create and delete some tables
      
       numrecs←10000000 ⍝ 10 million records
@@ -174,16 +174,23 @@
      
       ⍝ Test calculated / mapped columns
       (I1 Odd)←{⍵(2|⍵)}∪1⊃data              ⍝ Mappings of I1 column (with values in range 0…127)
+      OddC←('Even' 'Odd')[1+Odd]            ⍝ Odd in Char form
       db.AddCalc'OddI1' 'col_I1' 'B' 'map'(I1 Odd) ⍝ name source type calculation data
-      db.AddCalc'SquareI1' 'col_I1' 'I2' '{⍵*2}'
+      db.AddCalc'OddI1C' 'col_I1' 'C' 'map'(I1 OddC) ⍝ Map I1 => string 'Odd' or 'Even'
+      db.AddCalc'SquareI1' 'col_I1' 'I2' '{⍵*2}'⍬'{⍵*0.5}' ⍝ Function with inverse for faster searches
       db.AddCalc'ThreeResC' 'col_C' 'C' 'map'(charvalues(charsmapped←16⍴'zero' 'one' 'two')) ⍝ Map on char=>char
      
       assert Odd≡db.Calc'OddI1'I1           ⍝ Check that we perform a calculation
+      assert OddC≡db.Calc'OddI1C'I1
       assert charsmapped≡db.Calc'ThreeResC'charvalues
      
       TEST←'Select calculated column'
-      expect←({↓⍉(⍵∘.*1 2),2|⍵}1⊃data),⊂('zero' 'one' 'two')[1+3|¯1+charvalues⍳6⊃data]
-      assert expect≡db.Query time ⍬('col_I1' 'SquareI1' 'OddI1' 'ThreeResC') ⍝ select col_I1, SquareI1, OddI1 ThreeResC
+      expect←({↓⍉(⍵∘.*1 2),2|⍵}1⊃data),(('Even' 'Odd')[1+2|1⊃data])(('zero' 'one' 'two')[1+3|¯1+charvalues⍳6⊃data])
+      assert expect≡db.Query time ⍬('col_I1' 'SquareI1' 'OddI1' 'OddI1C' 'ThreeResC') ⍝ select col_I1, SquareI1, OddI1 ThreeResC
+     
+      TEST←'Test query on calculated column with inverse'
+      expect←1 2 3
+      assert expect≡∪⊃db.Query('SquareI1'(1 4 9))'col_I1' ⍝ select col_I1 where SquareI1 in 1 4 9
      
       expect←((≢charvalues)⍴0 1 0)/charvalues
       assert expect≡∪⊃db.Query('ThreeResC'(⊂'one'))'col_C' ⍝ Where clause on char=>char mapping

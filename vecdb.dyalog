@@ -55,6 +55,7 @@
           r←⊃+/_Counts.counter
         ∇
     :EndProperty
+    :EndSection ⍝ Properties
 
     ∇ Open(folder)
       :Implements constructor
@@ -282,12 +283,14 @@
       :Implements constructor
       :Access Public
       0 CreateOrExtend name folder columns types'' '' ⍝ No data or option
+      Open,⊂folder      ⍝ now open it properly
     ∇
 
     ∇ make5(name folder columns types options)
       :Implements constructor
       :Access Public
       0 CreateOrExtend name folder columns types options'' ⍝ No data or option
+      Open,⊂folder      ⍝ now open it properly
     ∇
 
     ∇ make6(name folder columns types options data)
@@ -363,7 +366,11 @@
           :If ~Exists sf←f⊃ShardFolders ⋄ MkDir sf ⋄ :EndIf
      
           d←data[;shards⍳f]             ⍝ extract records for one shard
+          :If create
           n←≢⊃d
+          :Else
+              n←f⊃_Counts.counter
+          :EndIf
           size←BlockSize×1⌈⌈n÷BlockSize ⍝ At least one block
      
           :If create                    ⍝ # of records in the shard

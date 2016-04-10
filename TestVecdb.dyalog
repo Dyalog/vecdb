@@ -274,6 +274,37 @@
       assert 0=db.Erase
     ∇
 
+    ∇ test_summary_fns;name;folder;options;columns;types;params;db;data;sort;comp
+      name folder←preTest ⍬
+     
+      columns←'id' 'name' 'price' 'quantity'
+      types←'I1' 'C' 'F' 'I1'
+      data←,⊂9⍴1 2
+      data,←⊂3/'ett' 'due' 'three'
+      data,←⊂0.25×⍳9
+      data,←⊂⌽⍳9
+     
+      options←⎕NS''
+      options.ShardFolders←(folder,'Shard')∘,¨'12'
+      options.(ShardFn ShardCols)←'{2-2|⊃⍵}' 1
+     
+      params←name folder columns types options data
+      db←⎕NEW #.vecdb params
+      sort←{(⊂⍋↑⊃↓⍉⍵)⌷⍵}
+      comp←sort⍨≡sort
+      assert((1⊃data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')'id'
+      assert((2⊃data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')'name'
+      assert((1⊃data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')'id'
+      assert((2⊃data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')'name'
+      assert((1⊃data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')'id'
+      assert((2⊃data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')'name'
+      assert((1⊃data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')'id'
+      assert((2⊃data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')'name'
+     
+     
+      assert 0=db.Erase
+    ∇
+
     :EndSection
 
     ∇ x←output x

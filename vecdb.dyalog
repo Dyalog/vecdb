@@ -367,7 +367,7 @@
      
           d←data[;shards⍳f]             ⍝ extract records for one shard
           :If create
-          n←≢⊃d
+              n←≢⊃d
           :Else
               n←f⊃_Counts.counter
           :EndIf
@@ -701,10 +701,12 @@
               r←r[;groupix]groupfn r[;colix]
           :EndIf
      
-          :For char :In {⍵/⍳⍴⍵}'C'=⊃¨Types[(≢groupby)↑allix] ⍝ Symbol Group By cols
-              r[;char]←mappings[allix[char]].{symbol[⍵]}r[;char]
-          :EndFor
       :EndFor
+     
+      :For char :In {⍵/⍳⍴⍵}'C'=⊃¨Types[(≢groupby)↑allix] ⍝ Symbol Group By cols
+          r[;char]←mappings[allix[char]].{symbol[⍵]}r[;char]
+      :EndFor
+     
     ∇
 
     ∇ r←Read(ix cols);char;m;num;cix;s;indices;t;calcix;calccols;c;nss;six;tix

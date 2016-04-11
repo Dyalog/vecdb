@@ -292,15 +292,25 @@
       db←⎕NEW #.vecdb params
       sort←{(⊂⍋↑⊃↓⍉⍵)⌷⍵}
       comp←sort⍨≡sort
+      assert(+⌿⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')⍬
       assert((1⊃data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')'id'
       assert((2⊃data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')'name'
+      assert((⍉↑2↑data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')('id' 'name')
+     
+      assert(⌈⌿⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')⍬
       assert((1⊃data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')'id'
       assert((2⊃data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')'name'
+      assert((⍉↑2↑data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')('id' 'name')
+     
+      assert(⌊⌿⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')⍬
       assert((1⊃data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')'id'
       assert((2⊃data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')'name'
+      assert((⍉↑2↑data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')('id' 'name')
+     
+      assert(2/≢⊃data)comp db.Query ⍬('count price' 'count quantity')⍬
       assert((1⊃data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')'id'
       assert((2⊃data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')'name'
-     
+      assert((⍉↑2↑data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')('id' 'name')
      
       assert 0=db.Erase
     ∇

@@ -54,7 +54,9 @@
         ∇ r←get
           r←⊃+/_Counts.counter
         ∇
-    :EndProperty
+    :EndProperty 
+
+    :EndSection
 
     ∇ Open(folder)
       :Implements constructor

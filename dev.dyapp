@@ -1,2 +1,8 @@
-﻿Load TestVecdb
-Load vecdb
+﻿Load vecdb
+Load vecdbclt
+Load vecdbsrv
+Load MakeBoot
+Load BootServers
+Load APLProcess
+Load TestVecdb
+Load TestVecdbSrv

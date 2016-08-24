@@ -6,9 +6,9 @@
     ∇ r←Connect(address port user)
      ⍝ Connect to vecdb server process
      
-      :If 0=⊃r←DRC.Init''
-          {}DRC.Close CONNECTION←'VECDB'
-      :AndIf 0=⊃r←DRC.Clt CONNECTION address port
+      :If 0=⊃r←##.DRC.Init''
+          {}##.DRC.Close CONNECTION←'VECDB'
+      :AndIf 0=⊃r←##.DRC.Clt CONNECTION address port
       :AndIf 0=⊃r←SrvDo CONNECTION('CltSetUser'user)
           r←SrvDo CONNECTION('CltSetUser'user)
       :Else
@@ -55,6 +55,7 @@
     ∇           
     
     :Class vecdbproxy
+    ⍝ Produce a vecdb proxy object for a served vecdb
      
      ∇Open (name connection)
      :Access Public

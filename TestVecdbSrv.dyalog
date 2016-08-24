@@ -4,7 +4,7 @@
 
     (⎕IO ⎕ML)←1 1
     LOG←1
-    toJson←(0 1)∘7160⌶
+    toJson←(0 1)∘(7160⌶)
 
     ∇ z←RunAll;path;source
       ⎕FUNTIE ⎕FNUMS ⋄ ⎕NUNTIE ⎕NNUMS
@@ -14,17 +14,9 @@
       path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
       ⎕←ServerBasic
     ∇
-
-    ∇ z←ServerBasic;columns;data;options;params;folder;types;name;db;ix;vecdbsrv;config;users;user;srvproc;clt;TEST
-     ⍝ Test database with 2 shards
-     ⍝ Also acts as test for add/remove columns
-     
-      folder←path,'/',(name←'srvtest'),'/'
-      ⎕←'Clearing: ',folder
-      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
-     
-      ⍝ --- Create configuration file ---
-
+   
+    ∇ config←CreateTestConfig filename;db;config;user;vecdbsrv
+     ⍝ 
       user←⎕NS ''
       user.(Name Id Admin)←'mkrom' 1001 1
       vecdbsrv←⎕NS''
@@ -36,8 +28,22 @@
       config←⎕NS''
       config.Server←vecdbsrv
       config.DBs←,db
-      (folder,'config.json')⎕NPUT toJson folder,'config.json'
-      
+      (toJson config)⎕NPUT filename
+    ∇
+
+    ∇ z←ServerBasic;columns;data;options;params;folder;types;name;ix;users;srvproc;clt;TEST
+     ⍝ Test database with 2 shards
+     ⍝ Also acts as test for add/remove columns
+     
+      folder←path,'/',(name←'srvtest'),'/'
+      ⎕←'Clearing: ',folder
+      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
+      ⎕MKDIR folder
+     
+      ⍝ --- Create configuration file ---
+
+      CreateTestConfig folder,'config.json'
+            
       ⍝ --- Create database ---
 
       columns←'Name' 'BlockSize' 'Flag'

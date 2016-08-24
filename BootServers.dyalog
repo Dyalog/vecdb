@@ -1,6 +1,6 @@
-﻿BootServers dummy;port;getenv;getnum;path
-⍝ Start a vecdb server process if VECDBSRV=config.xml PORT=nnnn
-⍝         vecdb slave process if  VECDBSLAVE="file,[VECDBSHARD=n]" PORT=nnnn
+﻿ BootServers dummy;port;getenv;getnum;path
+⍝ Start a vecdb server process if VECDBSRV="config.json" PORT=nnnn
+⍝         vecdb slave process if  VECDBSLAVE="file" SHARDS="n" PORT=nnnn
 
  getenv←{0=≢2 ⎕NQ'.' 'GetEnvironment'⍵:⍺}
  getnum←{⊃2⊃⎕VFI ⍵}
@@ -28,11 +28,7 @@
 
      :If VECDBSRV ⋄ vecdbsrv.Start CONFIG port
      :ElseIf VECDBSLAVE ⋄ vecdbslave.Start VECDB port
-
-         port←getnum port
-         ⎕←'Starting slave, listening on port ',⍕port
-         RPCServer.Run'RPCSRV'port
      :Else
-         ⎕←'See TestRPCServer'
+         ⎕←'Invalid configuration...'
      :EndIf
  :EndIf

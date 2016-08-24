@@ -1,6 +1,54 @@
 ﻿:Namespace vecdbsrv
+    ⍝ Uses #.vecdbclt
 
-    (⎕IO ⎕ML ⎕WX)←1 0 3
+    (⎕IO ⎕ML)←1 0
+    RUNTIME←0 ⍝ Use runtimes?
+
+    ∇ {r}←Start (config port);sink;data;event;obj;rc;wait;z;cmd;name
+     ⍝ Run a vecdb Server - based on CONGA RPCServer sample
+     
+      {}##.DRC.Init''
+      Init config
+      {}##.DRC.Close name←'VECSRV'
+     
+      :If 0=1⊃r←##.DRC.Srv name''port'Command'
+          1 Log'Server ''',name,''', listening on port ',⍕port
+          2 Log'Handler thread started: ',⍕Run&name port
+      :Else
+          3 Log'Server failed to start: ',,⍕r
+      :EndIf
+    ∇
+   
+    ∇ {r}←Init config;db;i
+     ⍝ Intialise the vecdb server
+      
+      (DBs Server)←config.(DBs Server)
+      
+      :For i :In ⍳≢DBs
+           db←i⊃DBs
+
+      :EndFor
+
+      r←⍬             ⍝ Need a result
+    ∇
+    
+    ∇ proc←{shards} Launch (target port);path;runtime;args
+     ⍝ Launch a full vecdbsrv or, if shards is defined, a slave
+      
+      :Trap 6 ⋄ source←SALT_Data.SourceFile
+      :Else ⋄ source←⎕WSID
+      :EndTrap 
+
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source 
+      runtime←RUNTIME
+      
+      :If slave←2=⎕NC 'shards'
+          args←'VECDBSLAVE="',target,'" SHARDS="',(⍕shards),'" PORT=',(⍕port)  
+      :Else
+          args←'VECDBSRV="',target,'" PORT=',⍕port
+      :EndIf
+      proc←⎕NEW ##.APLProcess 
+    ∇
 
     ∇ r←CltLock resource
      ⍝ Cover-function for call to Lock from a Client
@@ -19,7 +67,7 @@
      
       Connect CONNECTION          ⍝ Register the connection
       r←SetUser CONNECTION userid ⍝ Set the user id
-    ∇
+    ∇        
 
     ∇ r←CltStatus dummy
      ⍝ Get Status information
@@ -58,25 +106,6 @@
           TASKS←m/TASKS
           USERS←m/USERS
       :EndIf
-    ∇
-
-    ∇ {r}←InitLocks dummy
-     ⍝ Intialise the Locks Daemon
-     
-      r←⍬             ⍝ Need a result
-     
-      LOCKSGRANTED←0  ⍝ Counter
-     
-      NEXTTASK←1      ⍝ Next Task ID
-      CONNS←⍬         ⍝ TCP Sockets
-      TASKS←⍬         ⍝ TASK IDs
-      USERS←⍬         ⍝ USER IDs
-      RESOURCES←⍬     ⍝ List of resources managed
-      HELDBY←⍬        ⍝ TASK ID holding
-      QUEUES←0⍴⊂0 3⍴0 ⍝ Queue for each resource (TASK, CONN, ARRIVAL TIME)
-     
-      LOGLEVEL←1      ⍝ 0=everything, 1=warnings, 2=errors
-      MOCK←0          ⍝ Mockup
     ∇
 
     ∇ queue←Lock(cmd Resource);i;task;Conn
@@ -291,25 +320,14 @@
       task←i⊃TASKS
     ∇
 
-    ∇ {r}←Start port;sink;data;event;obj;rc;wait;z;cmd;name
-     ⍝ Run the Lock Server - based on CONGA RPCServer sample
-     
-      {}##.DRC.Init''
-      InitLocks 0
-      {}##.DRC.Close name←'LOCKSRV'
-     
-      :If 0=1⊃r←##.DRC.Srv name''port'Command'
-          1 Log'Server ''',name,''', listening on port ',⍕port
-          2 Log'Handler thread started: ',⍕Run&name port
-      :Else
-          3 Log'Server failed to start: ',,⍕r
-      :EndIf
-    ∇
-
     ∇ Test;assert;START;resources;nprocesses;nresources;nevents;i;conns;conn;z;s
-     
+     ⍝ This should be a stand-alone test of vecdbsrv
+     ⍝ Assumes existence of #.TestVecdbSrv
+
       assert←{'Assertion failed'⎕SIGNAL(⍵=0)/11}
-     
+      
+      #.TestVecdbSrv.CreateTestConfig folder,'config.json'
+
       InitLocks 0
       LOGLEVEL←3 ⍝ Log everything
       MOCK←1     ⍝ Do not send CONGA messages
@@ -364,32 +382,6 @@
       ⎕←(⍕nevents),' released & locked in',(1⍕s),'s (',(,' '~⍨,'CI12'⎕FMT nevents÷s),' locks/s)'
     ∇
 
-    ∇ TestClient user;mine;nevents;START;i;s;z;clt
-     
-      assert←{'Assertion failed'⎕SIGNAL(⍵=0)/11}
-     
-      clt←## ⍝ Location of Client functions
-     
-      ⎕←'Logged in as task #',⍕clt.LockServerInit'127.0.0.1' 8888 user
-     
-      nevents←1000
-      ⎕←'Testing performance...'
-     
-      START←3⊃⎕AI
-      :For i :In ⍳nevents
-          z←clt.∆ENQ'/PORTFOLIO'user
-          z←clt.∆CLS'/PORTFOLIO'user
-      :EndFor
-     
-      s←0.001×(3⊃⎕AI)-START
-      ⎕←(⍕nevents),' released & locked in',(1⍕s),'s (',(,' '~⍨,'CI12'⎕FMT nevents÷s),' locks/s)'
-     
-      #.DRC.Close #.LOCKSERVER
-      ⎕EX'#.LOCKSERVER'
-    ∇
-
     assert←{'Assertion failed'⎕SIGNAL(⍵=0)/11}
-
-⍝ ** Those ops cannot be recreated: clt
 
 :EndNamespace

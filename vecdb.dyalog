@@ -52,7 +52,7 @@
     :Property Count
     :Access public
         ∇ r←get
-          r←⊃+/_Counts.counter
+          r←⊃+/_Counts[ShardSelected].counter
         ∇
     :EndProperty 
 

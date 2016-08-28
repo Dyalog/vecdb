@@ -11,7 +11,8 @@
       :Trap 6 ⋄ source←SALT_Data.SourceFile
       :Else ⋄ source←⎕WSID
       :EndTrap
-      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source 
+      :If 0=⎕NC '#.DRC' ⋄ 'DRC' #.⎕CY 'conga' ⋄ :EndIf
       ⎕←ServerBasic
     ∇
    
@@ -24,28 +25,15 @@
       vecdbsrv.Users←,user
       db←⎕NS''
       db.Folder←folder
-      db.Slaves←,¨1 2 ⍝ Distribution of shards to slave processors
+      db.Slaves←⎕NS¨2⍴⊂''
+      db.Slaves.Shards←,¨1 2 ⍝ Distribution of shards to slave processors
       config←⎕NS''
       config.Server←vecdbsrv
       config.DBs←,db
       (toJson config)⎕NPUT filename
     ∇
-
-    ∇ z←ServerBasic;columns;data;options;params;folder;types;name;ix;users;srvproc;clt;TEST
-     ⍝ Test database with 2 shards
-     ⍝ Also acts as test for add/remove columns
-     
-      folder←path,'/',(name←'srvtest'),'/'
-      ⎕←'Clearing: ',folder
-      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
-      ⎕MKDIR folder
-     
-      ⍝ --- Create configuration file ---
-
-      CreateTestConfig folder,'config.json'
-            
-      ⍝ --- Create database ---
-
+    
+    ∇ (db params)←CreateTestDB;columns;types;data;options
       columns←'Name' 'BlockSize' 'Flag'
       types←,¨'C' 'F' 'C'
       data←('IBM' 'AAPL' 'MSFT' 'GOOG' 'DYALOG')(160.97 112.6 47.21 531.23 999.99)(5⍴'Buy' 'Sell')
@@ -56,25 +44,38 @@
       options.(ShardFn ShardCols)←'{2-2|⎕UCS ⊃¨⊃⍵}' 1
      
       params←name folder columns types options data
-      TEST←'Create sharded database'
       db←⎕NEW #.vecdb params
-      assert (≢data)=db.Count
+      assert (≢⊃data)=db.Count
+    ∇
+
+    ∇ z←ServerBasic;columns;data;options;params;folder;types;name;ix;users;srvproc;clt;TEST;config;db
+     ⍝ Test database with 2 shards
+     ⍝ Also acts as test for add/remove columns
+     
+      folder←path,'/',(name←'srvtest'),'/'
+      ⎕←'Clearing: ',folder
+      :Trap 22 ⋄ {}#.vecdb.Delete folder ⋄ :EndTrap
+      ⎕MKDIR folder
+     
+      ⍝ --- Create configuration file ---
+
+      config←CreateTestConfig folder,'config.json'
+      (db (name folder columns types options data))←CreateTestDB
 
       ⍝ --- Launch and connect to server, open database ---
 
-      srvproc←#.vecdbsrv.Launch folder 8100
-      assert 0=srvproc.HasExited
+      srvproc←#.vecdbsrv.Launch folder 8100      
+      #.vecdbclt.Connect '127.0.0.1' 8100 'mkrom'
+      db←#.vecdbclt.Open folder
       
-      clt←#.vecdbclt.Connect '127.0.0.1' 8100 'mkrom'
-      db←clt.Open folder
-
+      ∘∘∘
+      assert (≢⊃data)=db.Count
       ix←db.Query('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
       assert(1 2,⍪⍳¨4 1)≡ix
       TEST←'Read it all back'
       assert data≡db.Read time ix columns
           
-      z←db.Close
-      clt.ShutDown 'Shutting down now!'
+      z←db.Shutdown 'Shutting down now!'
       ⎕DL 3
       svrproc.Kill
       ⎕DL 3

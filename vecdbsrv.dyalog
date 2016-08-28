@@ -1,15 +1,19 @@
 ﻿:Namespace vecdbsrv
     ⍝ Uses #.vecdbclt
 
-    (⎕IO ⎕ML)←1 0
-    RUNTIME←0 ⍝ Use runtimes?
+    (⎕IO ⎕ML)←1 1
+    RUNTIME←0 ⍝ Use runtimes? 
+    NEXTPORT←8000            
+    fromJSON←7159⌶
 
-    ∇ {r}←Start (config port);sink;data;event;obj;rc;wait;z;cmd;name
+    ∇ {r}←Start (folder port);sink;data;event;obj;rc;wait;z;cmd;name
      ⍝ Run a vecdb Server - based on CONGA RPCServer sample
      
+      NEXTPORT←port+1
       {}##.DRC.Init''
-      Init config
-      {}##.DRC.Close name←'VECSRV'
+      CONFIG←fromJSON ⊃⎕NGET folder,'config.json'
+      Init CONFIG
+      {}##.DRC.Close name←'VECSRV' 
      
       :If 0=1⊃r←##.DRC.Srv name''port'Command'
           1 Log'Server ''',name,''', listening on port ',⍕port
@@ -18,62 +22,119 @@
           3 Log'Server failed to start: ',,⍕r
       :EndIf
     ∇
-   
-    ∇ {r}←Init config;db;i
-     ⍝ Intialise the vecdb server
+    
+    ∇ {r}←Shutdown msg;db;i;j;slave
+     ⍝ Shutdown
+     ⍝ /// Should validate user authorisation
+     ⍝ /// Should broadcast msg to all users
       
-      (DBs Server)←config.(DBs Server)
-      
-      :For i :In ⍳≢DBs
+      :For i :In ⍳≢DBs ⍝ Close all slaves
            db←i⊃DBs
-
-      :EndFor
-
+           :For j :In ⍳≢db.Slaves
+                slave←j⊃db.Slaves
+                #.vecdbclt.SrvDo slave.Connection ('Shutdown' TOKEN)
+                {}#.DRC.Close slave.Connection
+           :EndFor
+      :EndFor                      
+      
+      done←1          ⍝ Global flag to shut down
       r←⍬             ⍝ Need a result
     ∇
+
+    ∇ {r}←Init config;db;i;j;slave
+     ⍝ Intialise the vecdb server
+      
+      CONNS←TASKS←USERS←TOKENS←⍬
+      NEXTTASK←1000
+      LOGLEVEL←0
+
+      (DBs Server)←config.(DBs Server)  
+      TOKEN←{⎕RL←0 ⋄ ⎕PP←10 ⋄ 2↓⍕?0}0
+      DBFolders←DBs.Folder
+
+      :For i :In ⍳≢DBs ⍝ Launch all the processes
+           db←i⊃DBs
+           :For j :In ⍳≢db.Slaves
+                slave←j⊃db.Slaves                      
+                slave.Port←NEXTPORT
+                slave.Address←'127.0.0.1' ⍝ /// for now
+                slave.UserId←¯1           ⍝ /// ditto
+                slave.Proc←slave.Shards Launch db.Folder slave.Port
+                NEXTPORT←NEXTPORT+1
+           :EndFor
+      :EndFor                      
+      
+      :For i :In ⍳≢DBs ⍝ Now try to connect to them all
+      ⍝ /// in future perhaps launch a thread for each one and just check status?
+           db←i⊃DBs
+           :For j :In ⍳≢db.Slaves
+                slave←j⊃db.Slaves
+                :If 0=⊃r←'' #.vecdbclt.Connect slave.(Address Port UserId)
+                  slave.Connection←2⊃r  
+                  #.vecdbclt.SrvDo slave.Connection ('SetToken' TOKEN)
+                :Else
+                   ∘∘∘ ⍝ start up failed
+                :EndIf
+           :EndFor
+      :EndFor                      
+      
+      r←⍬             ⍝ Need a result
+    ∇
+
+    ∇ Process(obj data);r;CONNECTION;cmd;arg;close;txt;db;i;slave;rs
+     ⍝ Process a call. data[1] contains function name, data[2] an argument
+     
+     ⍝ {}##.DRC.Progress obj('    Thread ',(⍕⎕TID),' started to run: ',,⍕data) ⍝ Send progress report
+      CONNECTION←obj
+      Conn←1↓⊃(obj='.')⊂obj
+      (cmd arg)←2↑data
+      close←0
+
+      :If (⊂cmd)∊'Open' 'SetUser' 'Shutdown' ⍝ Non-DB commands
+          :Trap 9999
+               r←0 (⍎cmd,' obj arg')
+          :Else ⋄ r←⎕EN ⎕DM
+          :EndTrap     
+     
+      :ElseIf (⊂cmd)∊'Append' 'Count' 'Query' 'Update' 'Read' 
+          :If (≢DBs)<i←DBFolders⍳arg[1]
+              r←999 ('Database not found: ',⊃arg)
+          :Else
+             db←i⊃DBs
+             rs←⍬
+             :For slave :In db.Slaves 
+                 rs,←⊂#.vecdbclt.SrvDo slave.Connection (cmd (2⊃arg))
+             :EndFor   
+             r←0 rs
+          :EndIf
+      :Else
+          r←999 ('Unsupported command: ',cmd)
+      :EndIf
+     
+      {}##.DRC.Respond obj r
+
+      :If close
+          ⍝ /// {{}##.DRC.Close ⍵⊣⎕DL 1}&Conn ⍝ Start thread which waits 1s then closes
+      :EndIf     
+    ∇
     
-    ∇ proc←{shards} Launch (target port);path;runtime;args
+    ∇ proc←{shards} Launch (target port);path;runtime;args;slave;ws;source
      ⍝ Launch a full vecdbsrv or, if shards is defined, a slave
       
       :Trap 6 ⋄ source←SALT_Data.SourceFile
       :Else ⋄ source←⎕WSID
       :EndTrap 
 
-      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source 
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source  
+      ws←path,'/vecdbboot.dws'
       runtime←RUNTIME
       
       :If slave←2=⎕NC 'shards'
-          args←'VECDBSLAVE="',target,'" SHARDS="',(⍕shards),'" PORT=',(⍕port)  
+          args←'VECDBSLAVE="',target,'" SHARDS="',(⍕shards),'" PORT=',(⍕port),' TOKEN="',TOKEN,'"'  
       :Else
-          args←'VECDBSRV="',target,'" PORT=',⍕port
+          args←'VECDBSRV="',target,'" PORT=',(⍕port)
       :EndIf
-      proc←⎕NEW ##.APLProcess 
-    ∇
-
-    ∇ r←CltLock resource
-     ⍝ Cover-function for call to Lock from a Client
-     
-      r←Lock CONNECTION resource
-    ∇
-
-    ∇ r←CltRelease resource
-     ⍝ Cover-function for call to Lock from a Client
-     
-      r←Release CONNECTION resource
-    ∇
-
-    ∇ r←CltSetUser userid
-     ⍝ Cover-function for call to LockServerConnect from a Client
-     
-      Connect CONNECTION          ⍝ Register the connection
-      r←SetUser CONNECTION userid ⍝ Set the user id
-    ∇        
-
-    ∇ r←CltStatus dummy
-     ⍝ Get Status information
-     
-      r←'LOCKSGRANTED' 'TASKS' 'USERS' 'RESOURCES' 'HELDBY' 'QUEUES'
-      r←r(⍎⍕r)
+      proc←⎕NEW ##.APLProcess (ws args runtime) 
     ∇
 
     ∇ Connect cmd;task;conn
@@ -105,31 +166,6 @@
           CONNS←m/CONNS
           TASKS←m/TASKS
           USERS←m/USERS
-      :EndIf
-    ∇
-
-    ∇ queue←Lock(cmd Resource);i;task;Conn
-     ⍝ Returns queue length
-     
-      Conn←1↓⊃(cmd='.')⊂cmd
-      task←(CONNS⍳⊂Conn)⊃TASKS
-      queue←0
-     
-      :If (⍴RESOURCES)<i←RESOURCES⍳⊂Resource
-          RESOURCES,←⊂Resource ⍝ Not currently in the table
-          HELDBY,←task
-          QUEUES,←⊂0 3⍴0
-          Notify cmd Resource 0
-      :ElseIf HELDBY[i]=0      ⍝ In the table but not held
-          HELDBY[i]←task
-          Notify cmd Resource 0
-      :Else ⍝ It is already held
-          (i⊃QUEUES)⍪←task cmd(3⊃⎕AI)
-          queue←⊃⍴i⊃QUEUES
-          :If LOGLEVEL=0
-              0 Log'Resource ',Resource,' queued for ',(⍕task),' queue length=',⍕queue
-          :EndIf
-     
       :EndIf
     ∇
 
@@ -214,45 +250,6 @@
       :EndIf
     ∇
 
-    ∇ Process(obj data);r;CONNECTION
-     ⍝ Process a call. data[1] contains function name, data[2] an argument
-     
-     ⍝ {}##.DRC.Progress obj('    Thread ',(⍕⎕TID),' started to run: ',,⍕data) ⍝ Send progress report
-      CONNECTION←obj
-     
-      :Trap 9999 ⋄ r←0((⍎1⊃data)(2⊃data))
-      :Else ⋄ r←⎕EN ⎕DM
-      :EndTrap
-     
-      :If 'CltLock'≢1⊃data ⍝ CltLock response will be sent by "Notify"
-          {}##.DRC.Respond obj r
-      :EndIf
-    ∇
-
-    ∇ {r}←Release(cmd Resource);i;conn;queue;start;task;Conn
-     ⍝ Returns queue length
-      Conn←1↓⊃(cmd='.')⊂cmd
-     
-      :If LOGLEVEL=0
-          task←(CONNS⍳⊂Conn)⊃TASKS
-          0 Log'Resource ',Resource,' released by task ',⍕task
-      :EndIf
-     
-      :If (⍴RESOURCES)<i←RESOURCES⍳⊂Resource
-          3 Log'Release of not-locked resource ',Resource,' by connection ',C1
-          r←¯1
-          →0
-      :ElseIf 0=r←⊃⍴queue←i⊃QUEUES ⍝ No queue
-          HELDBY[i]←r←0
-      :Else ⍝ There is a queue
-          (task conn start)←3⍴queue
-          (i⊃QUEUES)←1 0↓queue  ⍝ Remove from queue
-          HELDBY[i]←task
-          Notify conn Resource(⎕AI[3]-start) ⍝ Notify of success
-          r←⊃⍴queue
-      :EndIf
-    ∇
-
     ∇ r←Run(name port);sink;data;event;obj;rc;wait;z;cmd
      ⍝ Run the Lock Server - based on CONGA RPCServer sample
      
@@ -278,14 +275,11 @@
                   :If 2≠⍴data ⍝ Command is expected to be (function name)(argument)
                       {}##.DRC.Respond obj(99999 'Bad command format') ⋄ :Leave
                   :EndIf
-     
-                  :If ('Clt'≢3↑cmd)∨3≠⎕NC cmd←1⊃data ⍝ Command is expected to be a function in this ws
-                      {}##.DRC.Respond obj(99999('Illegal command: ',cmd)) ⋄ :Leave
-                  :EndIf
-     
+          
                   Process obj data ⍝ NB Single-threaded
      
               :Case 'Connect' ⍝ Ignored
+                  Connect obj
      
               :Else ⍝ Unexpected result?
                   ∘
@@ -302,7 +296,24 @@
       :EndWhile
       ⎕DL 1 ⍝ Give responses time to complete
       {}##.DRC.Close name
-      0 Log'Server ',name,' terminated.'
+      0 Log'Server ',name,' terminated.'     
+            
+      :If 2=⎕NC '#.AUTOSHUT'
+      :AndIf 0≠#.AUTOSHUT
+          ⎕OFF
+      :EndIf
+    ∇
+    
+    ∇ r←Open(cmd folder);i;Conn
+      ⍝ Check whether a folder is serve-able 
+     
+      Conn←1↓⊃(cmd='.')⊂cmd
+      
+      :If (⊂folder)∊DBFolders
+          r←0 'OK'
+      :Else
+          r←999 ('Database folder not found: ',folder)
+      :EndIf
     ∇
 
     ∇ task←SetUser(cmd User);i;Conn

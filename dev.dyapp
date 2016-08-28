@@ -1,6 +1,7 @@
 ﻿Load vecdb
 Load vecdbclt
 Load vecdbsrv
+Load vecdbslave
 Load MakeBoot
 Load BootServers
 Load APLProcess

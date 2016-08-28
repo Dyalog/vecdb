@@ -1,16 +1,31 @@
 ﻿:Namespace vecdbclt
 
-    (⎕IO ⎕ML ⎕WX)←1 0 3
+    (⎕IO ⎕ML)←1 1
     SERVER←''
 
-    ∇ r←Connect(address port user)
+    ∇ r←Clt(connection address port)
+      :If 1111=⊃r←##.DRC.Clt connection address port
+          {}⎕DL 0.5
+      :AndIf 1111=⊃r←##.DRC.Clt connection address port
+          {}⎕DL 1
+      :AndIf 1111=⊃r←##.DRC.Clt connection address port
+          {}⎕DL 3
+      :AndIf 1111=⊃r←##.DRC.Clt connection address port
+          {}⎕DL 5
+      :AndIf 1111=⊃r←##.DRC.Clt connection address port
+          (⍕r)⎕SIGNAL 11
+      :EndIf
+    ∇
+
+    ∇ {r}←{connection}Connect(address port user)
      ⍝ Connect to vecdb server process
      
+      :If 0=⎕NC'connection' ⋄ connection←'VECDB' ⋄ :EndIf
+     
       :If 0=⊃r←##.DRC.Init''
-          {}##.DRC.Close CONNECTION←'VECDB'
-      :AndIf 0=⊃r←##.DRC.Clt CONNECTION address port
-      :AndIf 0=⊃r←SrvDo CONNECTION('CltSetUser'user)
-          r←SrvDo CONNECTION('CltSetUser'user)
+          :If 0≠⍴connection ⋄ {}##.DRC.Close connection ⋄ :EndIf
+      :AndIf 0=⊃r←Clt connection address port
+          CONNECTION←2⊃r
       :Else
           ('Error: ',,⍕r)⎕SIGNAL 11
       :EndIf
@@ -44,45 +59,66 @@
       :EndIf
     ∇
 
-    ∇ r←Open database
+    ∇ r←Open folder
      ⍝ Cover-function for call to Lock from a Client
      
-      :If 0=⊃r←SrvDo CONNECTION ('CltOpen' database) 
-          r←⎕NEW vecdbproxy (2⊃r)
-      :Else
-          (,⍕r) ⎕SIGNAL 11
-      :EndIf
-    ∇           
-    
+      r←⎕NEW vecdbproxy(folder CONNECTION)
+    ∇
+
     :Class vecdbproxy
     ⍝ Produce a vecdb proxy object for a served vecdb
-     
-     ∇Open (name connection)
-     :Access Public
-     :Implements Constructor
-     (NAME CONNECTION)←name connection
 
-     ∇
-     
-     ∇Close
-     :Access Public
+        ∇ Open(folder connection)
+          :Access Public
+          :Implements Constructor
+          (FOLDER CONNECTION)←folder connection
+          :If 0=⊃r←##.SrvDo CONNECTION('Open'folder)
+              ⎕DF'[vecdbclt: ',folder,']'
+          :Else
+              (⍕r)⎕SIGNAL 11
+          :EndIf
+        ∇
 
-     ∇
-                                      
-     ∇r←Append args
-     :Access Public
-∇                                
+        ∇ Shutdown msg
+          :Access Public
+          :If 0=⊃r←##.SrvDo CONNECTION('Shutdown' msg)
+              {}#.DRC.Close CONNECTION
+              CONNECTION←''
+          :EndIf
+        ∇
 
-     ∇r←Query args
-     :Access Public
-     ∇
-                                     
-     ∇r←Read args
-     :Access Public
-     ∇        
-                             
-     ∇r←Update args
-     ∇                                
+        ∇ Close
+          :Access Public
+          :If 0=⊃r←##.SrvDo CONNECTION('Close' ⍬)
+              {}#.DRC.Close CONNECTION
+              CONNECTION←''
+          :EndIf
+        ∇
+
+        ∇ r←Count
+          :Access Public
+          :If 0≠⍴CONNECTION
+             r←##.SrvDo CONNECTION('Count' (FOLDER ⍬))
+             r←+/r
+          :Else
+              'CONNECTION CLOSED' ⎕SIGNAL 11
+          :EndIf
+        ∇
+
+        ∇ r←Append args
+          :Access Public
+        ∇
+
+        ∇ r←Query args
+          :Access Public
+        ∇
+
+        ∇ r←Read args
+          :Access Public
+        ∇
+
+        ∇ r←Update args
+        ∇
 
     :EndClass
 

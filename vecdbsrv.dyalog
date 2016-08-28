@@ -2,18 +2,18 @@
     ⍝ Uses #.vecdbclt
 
     (⎕IO ⎕ML)←1 1
-    RUNTIME←0 ⍝ Use runtimes? 
-    NEXTPORT←8000            
+    RUNTIME←0 ⍝ Use runtimes?
+    NEXTPORT←8000
     fromJSON←7159⌶
 
-    ∇ {r}←Start (folder port);sink;data;event;obj;rc;wait;z;cmd;name
+    ∇ {r}←Start(folder port);sink;data;event;obj;rc;wait;z;cmd;name
      ⍝ Run a vecdb Server - based on CONGA RPCServer sample
      
       NEXTPORT←port+1
       {}##.DRC.Init''
-      CONFIG←fromJSON ⊃⎕NGET folder,'config.json'
+      CONFIG←fromJSON⊃⎕NGET folder,'config.json'
       Init CONFIG
-      {}##.DRC.Close name←'VECSRV' 
+      {}##.DRC.Close name←'VECSRV'
      
       :If 0=1⊃r←##.DRC.Srv name''port'Command'
           1 Log'Server ''',name,''', listening on port ',⍕port
@@ -22,66 +22,66 @@
           3 Log'Server failed to start: ',,⍕r
       :EndIf
     ∇
-    
+
     ∇ {r}←Shutdown msg;db;i;j;slave
      ⍝ Shutdown
      ⍝ /// Should validate user authorisation
      ⍝ /// Should broadcast msg to all users
-      
+     
       :For i :In ⍳≢DBs ⍝ Close all slaves
-           db←i⊃DBs
-           :For j :In ⍳≢db.Slaves
-                slave←j⊃db.Slaves
-                #.vecdbclt.SrvDo slave.Connection ('Shutdown' TOKEN)
-                {}#.DRC.Close slave.Connection
-           :EndFor
-      :EndFor                      
-      
+          db←i⊃DBs
+          :For j :In ⍳≢db.Slaves
+              slave←j⊃db.Slaves
+              #.vecdbclt.SrvDo slave.Connection('Shutdown'TOKEN)
+              {}#.DRC.Close slave.Connection
+          :EndFor
+      :EndFor
+     
       done←1          ⍝ Global flag to shut down
       r←⍬             ⍝ Need a result
     ∇
 
     ∇ {r}←Init config;db;i;j;slave
      ⍝ Intialise the vecdb server
-      
+     
       CONNS←TASKS←USERS←TOKENS←⍬
       NEXTTASK←1000
       LOGLEVEL←0
-
-      (DBs Server)←config.(DBs Server)  
+     
+      (DBs Server)←config.(DBs Server)
       TOKEN←{⎕RL←0 ⋄ ⎕PP←10 ⋄ 2↓⍕?0}0
       DBFolders←DBs.Folder
-
+     
       :For i :In ⍳≢DBs ⍝ Launch all the processes
-           db←i⊃DBs
-           :For j :In ⍳≢db.Slaves
-                slave←j⊃db.Slaves                      
-                slave.Port←NEXTPORT
-                slave.Address←'127.0.0.1' ⍝ /// for now
-                slave.UserId←¯1           ⍝ /// ditto
-                slave.Proc←slave.Shards Launch db.Folder slave.Port
-                NEXTPORT←NEXTPORT+1
-           :EndFor
-      :EndFor                      
-      
+          db←i⊃DBs
+          :For j :In ⍳≢db.Slaves
+              slave←j⊃db.Slaves
+              slave.Port←NEXTPORT
+              slave.Address←'127.0.0.1' ⍝ /// for now
+              slave.UserId←¯1           ⍝ /// ditto
+              slave.Proc←slave.Shards Launch db.Folder slave.Port
+              NEXTPORT←NEXTPORT+1
+          :EndFor
+      :EndFor
+     
       :For i :In ⍳≢DBs ⍝ Now try to connect to them all
       ⍝ /// in future perhaps launch a thread for each one and just check status?
-           db←i⊃DBs
-           :For j :In ⍳≢db.Slaves
-                slave←j⊃db.Slaves
-                :If 0=⊃r←'' #.vecdbclt.Connect slave.(Address Port UserId)
-                  slave.Connection←2⊃r  
-                  #.vecdbclt.SrvDo slave.Connection ('SetToken' TOKEN)
-                :Else
-                   ∘∘∘ ⍝ start up failed
-                :EndIf
-           :EndFor
-      :EndFor                      
-      
+          db←i⊃DBs
+          :For j :In ⍳≢db.Slaves
+              slave←j⊃db.Slaves
+              :If 0=⊃r←''#.vecdbclt.Connect slave.(Address Port UserId)
+                  slave.Connection←2⊃r
+                  #.vecdbclt.SrvDo slave.Connection('SetToken'TOKEN)
+              :Else
+                  ∘∘∘ ⍝ start up failed
+              :EndIf
+          :EndFor
+      :EndFor
+     
       r←⍬             ⍝ Need a result
     ∇
 
-    ∇ Process(obj data);r;CONNECTION;cmd;arg;close;txt;db;i;slave;rs
+    ∇ Process(obj data);r;CONNECTION;cmd;arg;close;txt;db;i;slave;rs;sdata
      ⍝ Process a call. data[1] contains function name, data[2] an argument
      
      ⍝ {}##.DRC.Progress obj('    Thread ',(⍕⎕TID),' started to run: ',,⍕data) ⍝ Send progress report
@@ -89,52 +89,56 @@
       Conn←1↓⊃(obj='.')⊂obj
       (cmd arg)←2↑data
       close←0
-
+     
       :If (⊂cmd)∊'Open' 'SetUser' 'Shutdown' ⍝ Non-DB commands
           :Trap 9999
-               r←0 (⍎cmd,' obj arg')
+              r←0(⍎cmd,' obj arg')
           :Else ⋄ r←⎕EN ⎕DM
-          :EndTrap     
+          :EndTrap
      
-      :ElseIf (⊂cmd)∊'Append' 'Count' 'Query' 'Update' 'Read' 
+      :ElseIf (⊂cmd)∊'Append' 'Count' 'Query' 'Update' 'Read'
           :If (≢DBs)<i←DBFolders⍳arg[1]
-              r←999 ('Database not found: ',⊃arg)
+              r←999('Database not found: ',⊃arg)
           :Else
-             db←i⊃DBs
-             rs←⍬
-             :For slave :In db.Slaves 
-                 rs,←⊂#.vecdbclt.SrvDo slave.Connection (cmd (2⊃arg))
-             :EndFor   
-             r←0 rs
+              db←i⊃DBs
+              rs←⍬
+              :For slave :In db.Slaves
+                  sdata←2⊃arg ⍝ Data to send to slave
+                  :If cmd≡'Read'  
+                     (1⊃sdata)←{(⍵[;1]∊slave.Shards)⌿⍵}1⊃sdata ⍝ Only request records in relevant shards
+                  :EndIf
+                  rs,←⊂#.vecdbclt.SrvDo slave.Connection(cmd sdata)
+              :EndFor
+              r←0 rs
           :EndIf
       :Else
-          r←999 ('Unsupported command: ',cmd)
+          r←999('Unsupported command: ',cmd)
       :EndIf
      
       {}##.DRC.Respond obj r
-
+     
       :If close
           ⍝ /// {{}##.DRC.Close ⍵⊣⎕DL 1}&Conn ⍝ Start thread which waits 1s then closes
-      :EndIf     
+      :EndIf
     ∇
-    
-    ∇ proc←{shards} Launch (target port);path;runtime;args;slave;ws;source
+
+    ∇ proc←{shards}Launch(target port);path;runtime;args;slave;ws;source
      ⍝ Launch a full vecdbsrv or, if shards is defined, a slave
-      
+     
       :Trap 6 ⋄ source←SALT_Data.SourceFile
       :Else ⋄ source←⎕WSID
-      :EndTrap 
-
-      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source  
+      :EndTrap
+     
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
       ws←path,'/vecdbboot.dws'
       runtime←RUNTIME
-      
-      :If slave←2=⎕NC 'shards'
-          args←'VECDBSLAVE="',target,'" SHARDS="',(⍕shards),'" PORT=',(⍕port),' TOKEN="',TOKEN,'"'  
+     
+      :If slave←2=⎕NC'shards'
+          args←'VECDBSLAVE="',target,'" SHARDS="',(⍕shards),'" PORT=',(⍕port),' TOKEN="',TOKEN,'"'
       :Else
           args←'VECDBSRV="',target,'" PORT=',(⍕port)
       :EndIf
-      proc←⎕NEW ##.APLProcess (ws args runtime) 
+      proc←⎕NEW ##.APLProcess(ws args runtime)
     ∇
 
     ∇ Connect cmd;task;conn
@@ -275,7 +279,7 @@
                   :If 2≠⍴data ⍝ Command is expected to be (function name)(argument)
                       {}##.DRC.Respond obj(99999 'Bad command format') ⋄ :Leave
                   :EndIf
-          
+     
                   Process obj data ⍝ NB Single-threaded
      
               :Case 'Connect' ⍝ Ignored
@@ -296,23 +300,23 @@
       :EndWhile
       ⎕DL 1 ⍝ Give responses time to complete
       {}##.DRC.Close name
-      0 Log'Server ',name,' terminated.'     
-            
-      :If 2=⎕NC '#.AUTOSHUT'
+      0 Log'Server ',name,' terminated.'
+     
+      :If 2=⎕NC'#.AUTOSHUT'
       :AndIf 0≠#.AUTOSHUT
           ⎕OFF
       :EndIf
     ∇
-    
+
     ∇ r←Open(cmd folder);i;Conn
-      ⍝ Check whether a folder is serve-able 
+      ⍝ Check whether a folder is serve-able
      
       Conn←1↓⊃(cmd='.')⊂cmd
-      
+     
       :If (⊂folder)∊DBFolders
           r←0 'OK'
       :Else
-          r←999 ('Database folder not found: ',folder)
+          r←999('Database folder not found: ',folder)
       :EndIf
     ∇
 
@@ -334,11 +338,11 @@
     ∇ Test;assert;START;resources;nprocesses;nresources;nevents;i;conns;conn;z;s
      ⍝ This should be a stand-alone test of vecdbsrv
      ⍝ Assumes existence of #.TestVecdbSrv
-
+     
       assert←{'Assertion failed'⎕SIGNAL(⍵=0)/11}
-      
+     
       #.TestVecdbSrv.CreateTestConfig folder,'config.json'
-
+     
       InitLocks 0
       LOGLEVEL←3 ⍝ Log everything
       MOCK←1     ⍝ Do not send CONGA messages

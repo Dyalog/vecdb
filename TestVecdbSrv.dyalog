@@ -67,17 +67,17 @@
       srvproc←#.vecdbsrv.Launch folder 8100      
       #.vecdbclt.Connect '127.0.0.1' 8100 'mkrom'
       db←#.vecdbclt.Open folder
-      
-      ∘∘∘
+
       assert (≢⊃data)=db.Count
       ix←db.Query('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
       assert(1 2,⍪⍳¨4 1)≡ix
+
       TEST←'Read it all back'
-      assert data≡db.Read time ix columns
+      assert data≡db.Read ix columns
           
-      z←db.Shutdown 'Shutting down now!'
+      z←db.Shutdown 'Shutting down now!'   
       ⎕DL 3
-      svrproc.Kill
+      :If ~srvproc.HasExited ⋄ srvproc.Kill ⋄ :EndIf
       ⎕DL 3
      
       TEST←'Erase database'

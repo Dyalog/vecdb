@@ -79,7 +79,7 @@
           :EndIf
         ∇
 
-        ∇ Shutdown msg
+        ∇ {r}←Shutdown msg
           :Access Public
           :If 0=⊃r←##.SrvDo CONNECTION('Shutdown' msg)
               {}#.DRC.Close CONNECTION
@@ -98,7 +98,7 @@
         ∇ r←Count
           :Access Public
           :If 0≠⍴CONNECTION
-             r←##.SrvDo CONNECTION('Count' (FOLDER ⍬))
+             r←##.SrvDo CONNECTION('Count' (FOLDER ⍬)) 
              r←+/r
           :Else
               'CONNECTION CLOSED' ⎕SIGNAL 11
@@ -107,17 +107,41 @@
 
         ∇ r←Append args
           :Access Public
+          :If 0≠⍴CONNECTION
+             r←##.SrvDo CONNECTION('Append' (FOLDER args))
+          :Else
+              'CONNECTION CLOSED' ⎕SIGNAL 11
+          :EndIf
         ∇
 
         ∇ r←Query args
           :Access Public
+          :If 0≠⍴CONNECTION
+             r←##.SrvDo CONNECTION('Query' (FOLDER args))
+             r←⊃⍪/r
+          :Else
+              'CONNECTION CLOSED' ⎕SIGNAL 11
+          :EndIf
         ∇
 
         ∇ r←Read args
           :Access Public
+          :If 0≠⍴CONNECTION
+             r←##.SrvDo CONNECTION('Read' (FOLDER args))
+             r←⊃,¨/r
+          :Else
+              'CONNECTION CLOSED' ⎕SIGNAL 11
+          :EndIf
         ∇
 
         ∇ r←Update args
+        :Access Public                     
+          :If 0≠⍴CONNECTION
+             r←##.SrvDo CONNECTION('Update' (FOLDER args))
+          :Else
+              'CONNECTION CLOSED' ⎕SIGNAL 11
+          :EndIf
+
         ∇
 
     :EndClass

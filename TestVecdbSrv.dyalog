@@ -34,7 +34,7 @@
     ∇
     
     ∇ (db params)←CreateTestDB;columns;types;data;options
-      columns←'Name' 'BlockSize' 'Flag'
+      columns←'Name' 'Price' 'Flag'
       types←,¨'C' 'F' 'C'
       data←('IBM' 'AAPL' 'MSFT' 'GOOG' 'DYALOG')(160.97 112.6 47.21 531.23 999.99)(5⍴'Buy' 'Sell')
      
@@ -67,14 +67,29 @@
       srvproc←#.vecdbsrv.Launch folder 8100      
       #.vecdbclt.Connect '127.0.0.1' 8100 'mkrom'
       db←#.vecdbclt.Open folder
+      
+      TEST←'Count records'
+      assert (≢⊃data)={db.Count} time ⍬ 
 
-      assert (≢⊃data)=db.Count
-      ix←db.Query('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
+      TEST←'Search for all records'
+      ix←db.Query time ('Name'((columns⍳⊂'Name')⊃data))⍬ ⍝ Should find everything
       assert(1 2,⍪⍳¨4 1)≡ix
 
       TEST←'Read it all back'
+      assert data≡db.Read time ix columns
+
+      (2⊃data)×←1.1 ⍝ Add 10% to all prices
+      TEST←'Update prices'
+      z←db.Update time ix 'Price' (2⊃data) ⍝ Update price
       assert data≡db.Read ix columns
-          
+      
+      ⍝ /// Tests to do:        
+      ⍝ Append data - to all and less that all shards
+      ⍝ Update multiple columns
+      ⍝ Read & update records with shards "out of order"
+      ⍝ Read & update not from all shards
+      
+      ⎕←'Closing down server...'    
       z←db.Shutdown 'Shutting down now!'   
       ⎕DL 3
       :If ~srvproc.HasExited ⋄ srvproc.Kill ⋄ :EndIf

@@ -81,7 +81,34 @@
       r←⍬             ⍝ Need a result
     ∇
 
-    ∇ Process(obj data);r;CONNECTION;cmd;arg;close;txt;db;i;slave;rs;sdata
+    ∇ (sdata is)←SlavePartition (cmd slaves data);ixs;cols;new;slave;slave_recs
+      
+      Shards←∊slaves.Shards
+      ShardSlaves←(≢¨slaves.Shards)/⍳≢slaves.Shards
+      
+      :Select cmd
+      :Case 'Read'        
+            (ixs cols)←data  
+            slave←ShardSlaves[Shards⍳ixs[;1]]
+            sdata←↓(⍪slave{⊂⍵}⌸ixs),⊂cols   
+            is←⍳≢sdata
+      :Case 'Update'
+            (ixs cols new)←data
+            slave←ShardSlaves[Shards⍳ixs[;1]]
+            slave_recs←(≢¨ixs[;2])/slave
+            :If 1=≡,cols ⍝ Simple column name
+                sdata←↓(slave{⊂⍵}⌸ixs),(⊂cols),⍪slave_recs{⊂⍵}⌸new            
+            :Else ⍝ Multiple columns
+                sdata←↓(slave{⊂⍵}⌸ixs),(⊂cols),⍪{slave_recs{⊂⍵}⌸⍵}¨new
+                ∘∘∘
+            :EndIf
+            is←⍳≢sdata
+      :Else
+          sdata←,⊂data ⋄ is←(≢slaves)/1
+      :EndSelect
+    ∇
+
+    ∇ Process(obj data);r;CONNECTION;cmd;arg;close;txt;db;i;slave;rs;sdata;ixs;s;slaves;cmds
      ⍝ Process a call. data[1] contains function name, data[2] an argument
      
      ⍝ {}##.DRC.Progress obj('    Thread ',(⍕⎕TID),' started to run: ',,⍕data) ⍝ Send progress report
@@ -100,15 +127,20 @@
           :If (≢DBs)<i←DBFolders⍳arg[1]
               r←999('Database not found: ',⊃arg)
           :Else
-              db←i⊃DBs
-              rs←⍬
-              :For slave :In db.Slaves
-                  sdata←2⊃arg ⍝ Data to send to slave
-                  :If cmd≡'Read'  
-                     (1⊃sdata)←{(⍵[;1]∊slave.Shards)⌿⍵}1⊃sdata ⍝ Only request records in relevant shards
-                  :EndIf
-                  rs,←⊂#.vecdbclt.SrvDo slave.Connection(cmd sdata)
+              slaves←(db←i⊃DBs).Slaves
+              (sdata ixs)←SlavePartition cmd slaves (2⊃arg)    
+              cmds←(≢slaves)⍴⊂''
+
+              :For s :In ⍳≢slaves ⍝ Send all the commands
+                  slave←s⊃slaves
+                  (s⊃cmds)←#.vecdbclt.SrvSend slave.Connection(cmd ((s⊃ixs)⊃sdata))
               :EndFor
+
+              rs←⍬              
+              :For s :In cmds ⍝ Receive all the results
+                  rs,←⊂#.vecdbclt.SrvRcv s
+              :EndFor
+
               r←0 rs
           :EndIf
       :Else

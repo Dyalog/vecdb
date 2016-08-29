@@ -31,10 +31,24 @@
       :EndIf
     ∇
 
-    ∇ r←SrvDo(client cmd);c;done;wr;z
-⍝ Send a command to vecdb, signal DOMAIN ERROR if it fails
+    ∇ r←SrvDo (client cmd)
+      ⍝ Send a command to vecdb and await the result
      
-      :If 0=1⊃r c←2↑##.DRC.Send client cmd
+      r←SrvRcv SrvSend client cmd
+    ∇
+
+    ∇cmd←SrvSend (client cmd);r   
+    ⍝ Return command name to wait on
+      :If 0=⊃r←##.DRC.Send client cmd
+          cmd←2⊃r
+      :Else
+          (⍕r) ⎕SIGNAL 11
+      :EndIf
+    ∇
+
+    ∇ r←SrvRcv c;done;wr;z
+    ⍝ Wait for result from vecdb, signal DOMAIN ERROR if it fails
+     
           :Repeat
               :If ~done←∧/100 0≠1⊃r←##.DRC.Wait c 10000 ⍝ Only wait 10 seconds
      
@@ -42,7 +56,6 @@
                   :Case 'Error'
                       done←1
                   :Case 'Progress'
-                 ⍝ progress report - update your GUI with 4⊃r?
                       ⎕←'Progress: ',4⊃r
                   :Case 'Receive'
                       :If 0=⊃r
@@ -56,7 +69,6 @@
                   :EndSelect
               :EndIf
           :Until done
-      :EndIf
     ∇
 
     ∇ r←Open folder

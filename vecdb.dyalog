@@ -302,7 +302,7 @@
       Open,⊂folder      ⍝ now open it properly
     ∇
 
-    ∇ extend CreateOrExtend(name folder columns types options data);i;s;offset;tn;type;length;col;size;n;dr;f;shards;sf;create;newcols;metafile;dix;d;newchars;filename;temp
+    ∇ extend CreateOrExtend(name folder columns types options data);i;s;offset;tn;type;length;col;size;n;dr;f;shards;sf;create;newcols;metafile;dix;d;newchars;filename;temp;ai3
     ⍝ Create (extend=0) a new database or extend an existing one
     ⍝ Called from constructors and public method AddColumns
       create←extend=0   ⍝ for readability
@@ -348,10 +348,10 @@
      
       :For i :In newchars/newcols ⍝ Create symbol files for CHAR fields
           col←i⊃mappings
-          dix←newcols⍳i                       ⍝ data index
-          col.symbol←∪dix⊃data                ⍝ Unique symbols in input data
+          dix←newcols⍳i                       ⍝ data index  
+          col.symbol←{⍵[∪⍳⍨↑⍵]}dix⊃data       ⍝ Unique symbols in input data
           col.file←folder,(⍕i),'.symbol'      ⍝ Symbol file name in main folder
-          col.symbol PutSymbols col.file      ⍝ Read symbols
+          col.symbol PutSymbols col.file      ⍝ Read symbols         
           col.(SymbolIndex←symbol∘⍳)          ⍝ Create lookup function
           (dix⊃data)←col.SymbolIndex dix⊃data ⍝ Convert indices
       :EndFor
@@ -377,7 +377,8 @@
               ⎕NUNTIE tn
           :EndIf
      
-          :For i :In newcols            ⍝ For each column being added
+          :For i :In newcols            ⍝ For each column being added  
+              ai3←⎕ai[3]
               dr←(TypeNames⍳_Types[i])⊃TypeNums
               tn←(filename←sf,(⍕i),'.vector')⎕NCREATE 0
               (sizeOf size dr)⎕NRESIZE tn
@@ -385,6 +386,7 @@
               temp←dr ¯1 ⎕MAP filename'W'
               temp[]←size↑(newcols⍳i)⊃d
               ⎕EX'temp'
+              ⍝ 'col ',(⍕i),': ',⍕⎕ai[3]-ai3
           :EndFor
       :EndFor
      

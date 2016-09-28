@@ -124,6 +124,6 @@
           0::⎕SIGNAL(⍺≡⊃⎕DMX.DM)↓11
           z←⍺⍺ ⍵
           ⎕SIGNAL 11
-      }
+      } 
 
 :EndNamespace

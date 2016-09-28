@@ -6,6 +6,8 @@
     :Section Constants
     :Field Public Shared Version←'0.2.5' ⍝ Added ability to use Calculated columns
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
+    ⍝ To come: C4=323 indexed chars
+    ⍝          Tn=Fixed with text (no index table)
     :Field Public Shared TypeNums←83 163 323 645 11 163
     :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
     :Field Public Shared CalcFns←,⊂'map'
@@ -33,6 +35,7 @@
 
     fileprops←'Name' 'BlockSize' ⍝ To go in comp 4 of meta.vecdb
     eis←{(≡⍵)∊0 1:⊂,⍵ ⋄ ⍵}       ⍝ enclose if simple
+    sizeOf←{(size dr)←⍵ ⋄⌈size×8÷⍨⌊dr÷10} ⍝ size in bytes of ⍵[1] elements of type ⍵[2]
 
     :Section Properties
     :Property Columns
@@ -54,7 +57,7 @@
         ∇ r←get
           r←⊃⊃+/_Counts[ShardSelected].counter
         ∇
-    :EndProperty 
+    :EndProperty
 
     :EndSection
 
@@ -299,7 +302,7 @@
       Open,⊂folder      ⍝ now open it properly
     ∇
 
-    ∇ extend CreateOrExtend(name folder columns types options data);i;s;offset;tn;type;length;col;size;n;dr;f;shards;sf;create;newcols;metafile;dix;d;newchars
+    ∇ extend CreateOrExtend(name folder columns types options data);i;s;offset;tn;type;length;col;size;n;dr;f;shards;sf;create;newcols;metafile;dix;d;newchars;filename;temp
     ⍝ Create (extend=0) a new database or extend an existing one
     ⍝ Called from constructors and public method AddColumns
       create←extend=0   ⍝ for readability
@@ -376,9 +379,12 @@
      
           :For i :In newcols            ⍝ For each column being added
               dr←(TypeNames⍳_Types[i])⊃TypeNums
-              tn←(sf,(⍕i),'.vector')⎕NCREATE 0
-              (size↑(newcols⍳i)⊃d)⎕NAPPEND tn dr
+              tn←(filename←sf,(⍕i),'.vector')⎕NCREATE 0
+              (sizeOf size dr)⎕NRESIZE tn
               ⎕NUNTIE tn
+              temp←dr ¯1 ⎕MAP filename'W'
+              temp[]←size↑(newcols⍳i)⊃d
+              ⎕EX'temp'
           :EndFor
       :EndFor
      
@@ -441,17 +447,18 @@
       :EndIf
     ∇
 
-    ∇ ExtendShard(folder cols count data);i;file;tn;Type;char;tns;sym;m;ix;fp;dr;col
+    ∇ ExtendShard(folder cols count data);i;file;tn;Type;char;tns;sym;m;ix;fp;dr;col;offset;n
     ⍝ Extend a Shard by count items
      
       :For i :In ⍳≢cols ⍝ For each column
           col←i⊃cols
           dr←(TypeNames⍳⊂col.type)⊃TypeNums
-          col.⎕EX'vector'                    ⍝ Remove memory map
-          tn←col.file ⎕NTIE 0
-          (count↑i⊃data)⎕NAPPEND tn,dr
+          col.⎕EX'vector'                      ⍝ Remove memory map
+          offset←⎕NSIZE tn←col.file ⎕NTIE 0
+          (offset+sizeOf count dr)⎕NRESIZE tn  ⍝ Extend the file
           ⎕NUNTIE tn
-          col.vector←(dr,¯1)⎕MAP col.file'W' ⍝ Re-establish map
+          n←≢col.vector←dr ¯1 ⎕MAP col.file'W' ⍝ Re-establish map
+          col.vector[(n-count)+⍳count]←count↑i⊃data ⍝ update with new data     
       :EndFor
     ∇
 

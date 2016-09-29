@@ -6,11 +6,12 @@
     LOG←1
     toJson←(0 1)∘(7160⌶)
  
-    ∇ z←Benchmark;columns;data;options;params;folder;types;name;ix;users;srvproc;clt;TEST;config;db;path
+    ∇ z←Benchmark;columns;data;options;params;folder;types;name;ix;users;srvproc;clt;TEST;config;db;path;tn;folders
      ⍝ Test database with 2 shards
      ⍝ Also acts as test for add/remove columns
       
-      path←Init
+      path←Init   
+      path←'//Mortens-Macbook-Air/vecdb'
       folder←path,'/',(name←'srvtest'),'/'
       ⎕←'Clearing: ',folder
       :Trap 22 ⋄ {}#.vecdb.Delete folder ⋄ :EndTrap
@@ -23,7 +24,13 @@
 
       ⍝ --- Launch and connect to server, open database ---
 
-      srvproc←#.vecdbsrv.Launch folder 8100      
+      tn←(folder,'meta.vecdb') ⎕FSTIE 0
+      ⍝ ↓↓↓ Arrgh, need to rename shards with local view from PC and Mac
+      folders←⎕FREAD tn,6
+      'c:\devt\vecdb\srvtest\shard1\' '//Users/mkrom/vecdb/srvtest/shard2/' ⎕FREPLACE tn,6
+      ⎕FUNTIE tn
+            
+      srvproc←#.vecdbsrv.Launch folder 8100 ⍬ 'c:\devt\vecdb\vecdbboot.dws'
       #.vecdbclt.Connect '127.0.0.1' 8100 'mkrom'
       db←#.vecdbclt.Open folder
       
@@ -54,7 +61,12 @@
       :If ~srvproc.HasExited ⋄ srvproc.Kill ⋄ :EndIf
       ⎕DL 3
      
-      TEST←'Erase database'
+      TEST←'Erase database' 
+      tn←(folder,'meta.vecdb') ⎕FSTIE 0
+      ⍝ ↓↓↓ Arrgh, need to rename shards with local view from PC and Mac
+      folders ⎕FREPLACE tn,6
+      ⎕FUNTIE tn
+
       db←⎕NEW #.vecdb(,⊂folder)
       assert 0={db.Erase}time ⍬
      
@@ -74,18 +86,12 @@
       ⎕←ServerBasic
     ∇
 
-    ∇ TestSsh;cmd
-      cmd←'RIDE_SPAWNED=1 RIDE_INIT=SERVE::5678 /Applications/Dyalog-15.0.app/Contents/Resources/Dyalog/mapl -q +s'
-⍝      ##.APLProcess.NewSshClient '192.168.6.120' 'mkrom' 'c:\docs\personal\macbook-air' cmd
-      ##.APLProcess.NewSshClient '192.168.17.129' 'mkrom' 'c:\docs\personal\macbook-air' cmd
-    ∇
-
     ∇ config←CreateBenchConfig filename;db;config;user;vecdbsrv;cmd;host;keyfile;userid
      ⍝ 
       cmd←'RIDE_SPAWNED=1 RIDE_INIT=SERVE::5678 /Applications/Dyalog-15.0.app/Contents/Resources/Dyalog/mapl'        
       host←'Mortens-Macbook-Air' 
       userid←'mkrom'
-      keyfile←'c:\docs\personal\macbook_air' 
+      keyfile←'c:\docs\personal\macbook-air' 
 
       user←⎕NS ''
       user.(Name Id Admin)←'mkrom' 1001 1
@@ -96,8 +102,11 @@
       db.Folder←folder
       db.Slaves←⎕NS¨2⍴⊂''
       db.Slaves.Shards←,¨1 2 ⍝ Distribution of shards to slave processors
+      db.Slaves.Folder←⊂folder
       db.Slaves[1].(Launch←⎕NS '').Type←'local'                                                                
+      db.Slaves[1].Folder←'//Mortens-Macbook-Air/vecdb/srvtest/' ⍝ If different seen from this slave
       db.Slaves[2].(Launch←⎕NS '').(Type Host User KeyFile Cmd)←'ssh' host userid keyfile cmd
+      db.Slaves[2].Folder←'/Users/mkrom/vecdb/srvtest/'
       config←⎕NS''
       config.Server←vecdbsrv
       config.DBs←,db
@@ -129,7 +138,7 @@
      
       options←⎕NS''
       options.BlockSize←10000
-      options.ShardFolders←(folder,'Shard1') '\\Mortens-Macbook-Air\vecdb\Shard2'
+      options.ShardFolders←'c:\devt\vecdb\srvtest\shard1' '//Mortens-Macbook-Air/vecdb/srvtest/shard2'
       options.(ShardFn ShardCols)←'{2-2|⎕UCS ⊃¨⊃⍵}' 1
      
       params←name folder columns types options data

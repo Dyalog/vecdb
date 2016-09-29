@@ -24,9 +24,10 @@
           DB←⎕NEW ##.vecdb(folder shards)
           STATE←0
           1 Log'Slave startup completed, ',STATUS←'Folder= ',folder,', shards= ',⍕shards
-      :Else
+      :Else  
           STATE←2 ⍝ Startup Failed
           3 Log STATUS←'Startup failed: ',∊⎕DM
+          ∘∘∘
       :EndTrap
     ∇
 

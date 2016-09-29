@@ -41,9 +41,15 @@
       r←⍬             ⍝ Need a result
     ∇
 
-    ∇ {r}←Init config;db;i;j;slave
+    ∇ {r}←Init config;db;i;j;slave;path;ws
      ⍝ Intialise the vecdb server
+      
+      :Trap 6 ⋄ source←SALT_Data.SourceFile
+      :Else ⋄ source←⎕WSID
+      :EndTrap
      
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
+
       CONNS←TASKS←USERS←TOKENS←⍬
       NEXTTASK←1000
       LOGLEVEL←0
@@ -57,9 +63,20 @@
           :For j :In ⍳≢db.Slaves
               slave←j⊃db.Slaves
               slave.Port←NEXTPORT
-              slave.Address←'127.0.0.1' ⍝ /// for now
-              slave.UserId←¯1           ⍝ /// ditto
-              slave.Proc←slave.Shards Launch db.Folder slave.Port
+              :Select slave.Launch.Type
+              :Case 'local'
+                  slave.Address←'127.0.0.1' ⍝ /// for now
+                  slave.UserId←¯1           ⍝ /// ditto               
+                  ws←path,'/vecdbboot.dws'
+                  slave.Proc←slave.Shards Launch slave.Folder slave.Port RUNTIME ws
+              :Case 'ssh'                           
+                  slave.Address←slave.Launch.Host 
+                  slave.UserId←¯1                
+                  ws←({(-⌊/(⌽⍵)⍳'\/')↓⍵}¯1↓slave.Folder),'/vecdbboot.dws'
+                  slave.Proc←slave.Shards Launch slave.Folder slave.Port slave.Launch.(Host User KeyFile Cmd) ws
+              :Else
+                  ∘∘∘ ⍝ Unknown launch type
+              :EndSelect
               NEXTPORT←NEXTPORT+1
           :EndFor
       :EndFor
@@ -81,28 +98,28 @@
       r←⍬             ⍝ Need a result
     ∇
 
-    ∇ (sdata is)←SlavePartition (cmd slaves data);ixs;cols;new;slave;slave_recs
-      
+    ∇ (sdata is)←SlavePartition(cmd slaves data);ixs;cols;new;slave;slave_recs
+     
       Shards←∊slaves.Shards
       ShardSlaves←(≢¨slaves.Shards)/⍳≢slaves.Shards
-      
+     
       :Select cmd
-      :Case 'Read'        
-            (ixs cols)←data  
-            slave←ShardSlaves[Shards⍳ixs[;1]]
-            sdata←↓(⍪slave{⊂⍵}⌸ixs),⊂cols   
-            is←⍳≢sdata
+      :Case 'Read'
+          (ixs cols)←data
+          slave←ShardSlaves[Shards⍳ixs[;1]]
+          sdata←↓(⍪slave{⊂⍵}⌸ixs),⊂cols
+          is←⍳≢sdata
       :Case 'Update'
-            (ixs cols new)←data
-            slave←ShardSlaves[Shards⍳ixs[;1]]
-            slave_recs←(≢¨ixs[;2])/slave
-            :If 1=≡,cols ⍝ Simple column name
-                sdata←↓(slave{⊂⍵}⌸ixs),(⊂cols),⍪slave_recs{⊂⍵}⌸new            
-            :Else ⍝ Multiple columns
-                sdata←↓(slave{⊂⍵}⌸ixs),(⊂cols),⍪{slave_recs{⊂⍵}⌸⍵}¨new
-                ∘∘∘
-            :EndIf
-            is←⍳≢sdata
+          (ixs cols new)←data
+          slave←ShardSlaves[Shards⍳ixs[;1]]
+          slave_recs←(≢¨ixs[;2])/slave
+          :If 1=≡,cols ⍝ Simple column name
+              sdata←↓(slave{⊂⍵}⌸ixs),(⊂cols),⍪slave_recs{⊂⍵}⌸new
+          :Else ⍝ Multiple columns
+              sdata←↓(slave{⊂⍵}⌸ixs),(⊂cols),⍪{slave_recs{⊂⍵}⌸⍵}¨new
+              ∘∘∘
+          :EndIf
+          is←⍳≢sdata
       :Else
           sdata←,⊂data ⋄ is←(≢slaves)/1
       :EndSelect
@@ -128,19 +145,19 @@
               r←999('Database not found: ',⊃arg)
           :Else
               slaves←(db←i⊃DBs).Slaves
-              (sdata ixs)←SlavePartition cmd slaves (2⊃arg)    
+              (sdata ixs)←SlavePartition cmd slaves(2⊃arg)
               cmds←(≢slaves)⍴⊂''
-
+     
               :For s :In ⍳≢slaves ⍝ Send all the commands
                   slave←s⊃slaves
-                  (s⊃cmds)←#.vecdbclt.SrvSend slave.Connection(cmd ((s⊃ixs)⊃sdata))
+                  (s⊃cmds)←#.vecdbclt.SrvSend slave.Connection(cmd((s⊃ixs)⊃sdata))
               :EndFor
-
-              rs←⍬              
+     
+              rs←⍬
               :For s :In cmds ⍝ Receive all the results
                   rs,←⊂#.vecdbclt.SrvRcv s
               :EndFor
-
+     
               r←0 rs
           :EndIf
       :Else
@@ -154,17 +171,11 @@
       :EndIf
     ∇
 
-    ∇ proc←{shards}Launch(target port);path;runtime;args;slave;ws;source
+    ∇ proc←{shards}Launch(target port runtime ws);path;runtime;args;slave;source
      ⍝ Launch a full vecdbsrv or, if shards is defined, a slave
-     
-      :Trap 6 ⋄ source←SALT_Data.SourceFile
-      :Else ⋄ source←⎕WSID
-      :EndTrap
-     
-      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
-      ws←path,'/vecdbboot.dws'
-      runtime←RUNTIME
-     
+
+      :If 0=≢runtime ⋄ runtime←RUNTIME ⋄ :EndIf
+                
       :If slave←2=⎕NC'shards'
           args←'VECDBSLAVE="',target,'" SHARDS="',(⍕shards),'" PORT=',(⍕port),' TOKEN="',TOKEN,'"'
       :Else

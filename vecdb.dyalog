@@ -72,9 +72,9 @@
     ⍝ Extract calculation data from meta file
      
       :If 8=2⊃⎕FSIZE tn ⍝ If File format pre-dates calculated columns
-          'unused'⎕FAPPEND tn ⍝ 8
-          'unused'⎕FAPPEND tn ⍝ 9
-          (⍬ ⍬ ⍬)⎕FAPPEND tn  ⍝ 10 Calc Col Names, Source Columns, Data Type
+          'unused'∆FAPPEND tn ⍝ 8
+          'unused'∆FAPPEND tn ⍝ 9
+          (⍬ ⍬ ⍬)∆FAPPEND tn  ⍝ 10 Calc Col Names, Source Columns, Data Type
       :EndIf
      
       (_CalcCols _CalcSources _CalcTypes)←⎕FREAD tn,10 ⍝ Calculated column definitions
@@ -365,8 +365,7 @@
       :EndIf
      
       :For f :In ⍳≢ShardFolders
-          :If ~Exists sf←f⊃ShardFolders ⋄ MkDir sf ⋄ :EndIf
-     
+          3 ⎕MKDIR sf←f⊃ShardFolders     
           d←data[;shards⍳f]             ⍝ extract records for one shard
           n←≢⊃d
           size←BlockSize×1⌈⌈n÷BlockSize ⍝ At least one block
@@ -391,20 +390,28 @@
       :EndFor
      
       :If create
-          tn←metafile ⎕FCREATE 0
-          ('vecdb ',Version)⎕FAPPEND tn    ⍝ 1
-          'See github.com/Dyalog/vecdb/doc/Implementation.md'⎕FAPPEND tn ⍝ 2
-          'unused'⎕FAPPEND tn              ⍝ 3
-          (fileprops(⍎¨fileprops))⎕FAPPEND tn ⍝ 4 (Name BlockSize)
-          (_Columns _Types)⎕FAPPEND tn     ⍝ 5
-          ShardFolders ⎕FAPPEND tn         ⍝ 6
-          (ShardFn ShardCols)⎕FAPPEND tn   ⍝ 7
+          tn←metafile (⎕FCREATE⍠3) 0
+          ('vecdb ',Version)∆FAPPEND tn    ⍝ 1 
+          'See github.com/Dyalog/vecdb/doc/Implementation.md'∆FAPPEND tn ⍝ 2
+          'unused'∆FAPPEND tn              ⍝ 3
+          (fileprops(⍎¨fileprops))∆FAPPEND tn ⍝ 4 (Name BlockSize)
+          (_Columns _Types)∆FAPPEND tn     ⍝ 5
+          ShardFolders ∆FAPPEND tn         ⍝ 6
+          (ShardFn ShardCols)∆FAPPEND tn   ⍝ 7 
+          'unused'∆FAPPEND tn              ⍝ 8
+          'unused'∆FAPPEND tn              ⍝ 9
+          (⍬ ⍬ ⍬)∆FAPPEND tn    ⍝ 10 Calc Col Names, Source Columns, Data Type
      
       :Else ⍝ Extending
           tn←metafile ⎕FTIE 0
           (_Columns _Types)⎕FREPLACE tn 5
       :EndIf
       ⎕FUNTIE tn
+    ∇     
+    
+    ∇X ∆FAPPEND Y
+    X ⎕FAPPEND Y
+    ⎕FUNTIE ⍬
     ∇
 
     ∇ (shards data)←cix ShardData data;six;s;char;rawdata;sym;c;counts;m

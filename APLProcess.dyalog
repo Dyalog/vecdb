@@ -51,28 +51,29 @@
       Start(Ws Args RunTime)
     ∇
 
-    ∇ Start(ws args rt);psi;pid
+    ∇ Start(ws args rt);psi;pid;cmd;host;port;keyfile;exe
       (Ws Args)←ws args
       :If 0≠⍴RIDE_INIT
           args←args,' RIDE_SPAWNED=1 RIDE_INIT=',RIDE_INIT
       :EndIf
      
-      :If ~0 2∊⍨10|⎕DR rt ⍝ if rt is character, it's the executable name
-          Exe←(RunTimeName⍣rt)GetCurrentExecutable
+      :If ~0 2 6∊⍨10|⎕DR rt ⍝ if rt is character or nested, it defines what to start
+          Exe←(RunTimeName⍣rt) GetCurrentExecutable ⍝ else, deduce it 
       :Else
           Exe←rt
           rt←0
       :EndIf
-   ⍝   ws,←rt/' salt'  ⍝ if runtime, load the salt workspace first, which will subsequently load the target workspace
-      :If IsWin←IsWindows
+
+      :If IsWin←IsWindows∧~IsSsh←326=⎕DR Exe
           ⎕USING←'System,System.dll'
           psi←⎕NEW Diagnostics.ProcessStartInfo,⊂Exe(ws,' ',args)
           psi.WindowStyle←Diagnostics.ProcessWindowStyle.Minimized
           Proc←Diagnostics.Process.Start psi
       :Else ⍝ Unix     
-          :If IsSsh←326=⎕DR Exe 
-              ∘∘∘
-              Proc←SshProc Exe
+          :If IsSsh                             
+              (host port keyfile exe)←Exe  
+              cmd←args,' ',exe,' -q +s ',ws
+              Proc←SshProc host port keyfile cmd
           :Else
           pid←_SH'{ ',args,' ',Exe,' +s ',ws,' -c APLppid=',(⍕GetCurrentProcessId),' </dev/null >/dev/null 2>&1 & } ; echo $!'
           Proc.Id←pid
@@ -111,7 +112,6 @@
       :If IsWin
           r←⍎'t'⎕NA'U4 kernel32|GetCurrentProcessId'
       :ElseIf IsSsh
-          ∘∘∘
           r←Proc.Pid
       :Else
           r←tonum⊃_SH'echo $PPID'
@@ -120,7 +120,7 @@
 
     ∇ r←GetCurrentExecutable;⎕USING;t;gmfn
       :Access Public Shared
-      :If IsWin
+      :If IsWindows
           r←''
           :Trap 0
               'gmfn'⎕NA'U4 kernel32|GetModuleFileName* P =T[] U4'
@@ -305,10 +305,8 @@
 
     ∇ r←HasExited
       :Access public instance
-      :If IsWin
+      :If IsWin∨IsSsh
           r←{0::⍵ ⋄ Proc.HasExited}1 
-      :ElseIf IsSsh
-          ∘∘∘
       :Else
           r←~UNIXIsRunning Proc.Id ⍝ AWS
       :EndIf
@@ -480,14 +478,21 @@
       listpids←{0~⍨2⊃(⎕UCS 10)⎕VFI (conn.RunCommand ⊂'ps -u ',user,' | grep dyalog | grep -v grep | awk ''{print $2}''').Result}
       guid←'dyalog-ssh-',(⍕⎕TS)~' '
       pids←listpids ⍬
-      tid←conn.RunCommand&⊂cmd ⍝ ,' -c ''',guid,'''' 
-      :If 1=⍴pid←(listpids ⍬)~pids ⋄ pid←⊃pid
-      :Else ⋄ ∘∘∘ ⋄ :EndIf ⍝ failed to start  
       Proc←⎕NS ''
       Proc.SshConn←conn
+      Proc.HasExited←0
+      tid←{SshRun conn ⍵ Proc}&⊂cmd 
       Proc.tid←tid
-      Proc.Pid←
-
+      ⎕DL 1
+      :If 1=⍴pid←(listpids ⍬)~pids ⋄ pid←⊃pid
+      :Else ⋄ ∘∘∘ ⋄ :EndIf ⍝ failed to start  
+      Proc.Pid←pid
+    ∇  
+    
+    ∇SshRun (conn cmd proc) 
+    ⍝ Wait until APL exits, then set HasExited←1
+     conn.RunCommand cmd
+     proc.HasExited←1
     ∇
 
 :EndClass

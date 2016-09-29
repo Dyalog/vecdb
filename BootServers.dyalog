@@ -2,6 +2,8 @@
 ⍝ Start a vecdb server process if VECDBSRV="config.json" PORT=nnnn
 ⍝         vecdb slave process if  VECDBSLAVE="file" SHARDS="n" PORT=nnnn
 
+ ⎕←'Command Line:'
+ ⎕←2 ⎕NQ'.' 'GetCommandLine'
  getenv←{0=≢r←2 ⎕NQ'.' 'GetEnvironment'⍵:⍺ ⋄ r}
  getnum←{⊃2⊃⎕VFI ⍵}
  path←'file://',⊃⎕NPARTS ⎕WSID

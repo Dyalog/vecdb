@@ -24,7 +24,6 @@
       :Trap 6
          source←⍎'(⊃⊃⎕CLASS ⎕THIS).SALT_Data.SourceFile' ⍝ ⍎ works around a bug
       :Else
-          source←(⊃⊃⎕CLASS ⎕THIS).SALT_Data.SourceFile
           :If 0=⍴source←{((⊃¨⍵)⍳⊃⊃⎕CLASS ⎕THIS)⊃⍵,⊂''}5177⌶⍬
               source←⎕WSID
           :Else ⋄ source←4⊃source
@@ -71,7 +70,8 @@
           psi.WindowStyle←Diagnostics.ProcessWindowStyle.Minimized
           Proc←Diagnostics.Process.Start psi
       :Else ⍝ Unix     
-          :If IsSsh←326=⎕DR Exe
+          :If IsSsh←326=⎕DR Exe 
+              ∘∘∘
               Proc←SshProc Exe
           :Else
           pid←_SH'{ ',args,' ',Exe,' +s ',ws,' -c APLppid=',(⍕GetCurrentProcessId),' </dev/null >/dev/null 2>&1 & } ; echo $!'

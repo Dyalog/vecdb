@@ -16,11 +16,6 @@
       :Trap 22 ⋄ {}#.vecdb.Delete folder ⋄ :EndTrap
       ⎕MKDIR folder   
       
-      :If 0=⎕NC '#.PASS'
-         ⎕←'Enter password from mkrom@Mortens-Macbook-Air: '
-         #.PASS←⍞
-      :EndIf
-     
       ⍝ --- Create configuration file ---
 
       config←CreateBenchConfig folder,'config.json'
@@ -85,11 +80,11 @@
       ##.APLProcess.NewSshClient '192.168.17.129' 'mkrom' 'c:\docs\personal\macbook-air' cmd
     ∇
 
-    ∇ config←CreateBenchConfig filename;db;config;user;vecdbsrv;cmd;host;keyfile
+    ∇ config←CreateBenchConfig filename;db;config;user;vecdbsrv;cmd;host;keyfile;userid
      ⍝ 
-      cmd←'RIDE_INIT=SERVE::5678 /Applications/Dyalog-15.0.app/Contents/Resources/Dyalog/mapl'        
+      cmd←'RIDE_SPAWNED=1 RIDE_INIT=SERVE::5678 /Applications/Dyalog-15.0.app/Contents/Resources/Dyalog/mapl'        
       host←'Mortens-Macbook-Air' 
-      user←'mkrom'
+      userid←'mkrom'
       keyfile←'c:\docs\personal\macbook_air' 
 
       user←⎕NS ''
@@ -102,7 +97,7 @@
       db.Slaves←⎕NS¨2⍴⊂''
       db.Slaves.Shards←,¨1 2 ⍝ Distribution of shards to slave processors
       db.Slaves[1].(Launch←⎕NS '').Type←'local'                                                                
-      db.Slaves[2].(Launch←⎕NS '').(Type Host User KeyFile Cmd)←'ssh' host user keyfile cmd
+      db.Slaves[2].(Launch←⎕NS '').(Type Host User KeyFile Cmd)←'ssh' host userid keyfile cmd
       config←⎕NS''
       config.Server←vecdbsrv
       config.DBs←,db
@@ -134,7 +129,7 @@
      
       options←⎕NS''
       options.BlockSize←10000
-      options.ShardFolders←(folder,'Shard')∘,¨'12'
+      options.ShardFolders←(folder,'Shard1') '\\Mortens-Macbook-Air\vecdb\Shard2'
       options.(ShardFn ShardCols)←'{2-2|⎕UCS ⊃¨⊃⍵}' 1
      
       params←name folder columns types options data
@@ -148,8 +143,8 @@
       data←('IBM' 'AAPL' 'MSFT' 'GOOG' 'DYALOG')(160.97 112.6 47.21 531.23 999.99)(5⍴'Buy' 'Sell')
      
       options←⎕NS''
-      options.BlockSize←10000
       options.ShardFolders←(folder,'Shard')∘,¨'12'
+      options.BlockSize←10000
       options.(ShardFn ShardCols)←'{2-2|⎕UCS ⊃¨⊃⍵}' 1
      
       params←name folder columns types options data

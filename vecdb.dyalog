@@ -4,7 +4,7 @@
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared Version←'0.2.5' ⍝ Added ability to use Calculated columns
+    :Field Public Shared Version←'0.2.6' ⍝ Parallel DB
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
     ⍝ To come: C4=323 indexed chars
     ⍝          Tn=Fixed with text (no index table)
@@ -348,10 +348,10 @@
      
       :For i :In newchars/newcols ⍝ Create symbol files for CHAR fields
           col←i⊃mappings
-          dix←newcols⍳i                       ⍝ data index  
+          dix←newcols⍳i                       ⍝ data index
           col.symbol←{⍵[∪⍳⍨↑⍵]}dix⊃data       ⍝ Unique symbols in input data
           col.file←folder,(⍕i),'.symbol'      ⍝ Symbol file name in main folder
-          col.symbol PutSymbols col.file      ⍝ Read symbols         
+          col.symbol PutSymbols col.file      ⍝ Read symbols
           col.(SymbolIndex←symbol∘⍳)          ⍝ Create lookup function
           (dix⊃data)←col.SymbolIndex dix⊃data ⍝ Convert indices
       :EndFor
@@ -377,8 +377,8 @@
               ⎕NUNTIE tn
           :EndIf
      
-          :For i :In newcols            ⍝ For each column being added  
-              ai3←⎕ai[3]
+          :For i :In newcols            ⍝ For each column being added
+              ai3←⎕AI[3]
               dr←(TypeNames⍳_Types[i])⊃TypeNums
               tn←(filename←sf,(⍕i),'.vector')⎕NCREATE 0
               (sizeOf size dr)⎕NRESIZE tn
@@ -460,7 +460,7 @@
           (offset+sizeOf count dr)⎕NRESIZE tn  ⍝ Extend the file
           ⎕NUNTIE tn
           n←≢col.vector←dr ¯1 ⎕MAP col.file'W' ⍝ Re-establish map
-          col.vector[(n-count)+⍳count]←count↑i⊃data ⍝ update with new data     
+          col.vector[(n-count)+⍳count]←count↑i⊃data ⍝ update with new data
       :EndFor
     ∇
 
@@ -812,7 +812,7 @@
       r←0
     ∇
 
-    ∇ r←Delete folder;file;tn;folders;files;f
+    ∇ r←Delete folder;file;tn;folders;files;f;shards
       :Access Public Shared
       ⍝ Erase a vecdb file without opening it first (it might be too damaged to open)
       ⍝   Does check whether there is a meta file in the folder
@@ -821,12 +821,17 @@
       folder←AddSlash folder
       'Folder not found'⎕SIGNAL(DirExists folder)↓22           ⍝ Not there
       'Not a vecdb'⎕SIGNAL(Exists file←folder,'meta.vecdb')↓22 ⍝ Paranoia
+      tn←file ⎕FTIE 0
+      folders←(⎕FREAD tn 6),⊂folder ⍝ shards first   
+      file ⎕FERASE tn
      
-      :If isWindows
-          ⎕CMD'rmdir "',folder,'" /s /q'
-      :Else
-          1 _SH'rm -r ',folder
-      :EndIf
+      :For folder :In folders
+          :If isWindows
+              ⎕CMD'rmdir "',folder,'" /s /q'
+          :Else
+              1 _SH'rm -r ',folder
+          :EndIf
+      :EndFor
      
       r←~DirExists folder
     ∇

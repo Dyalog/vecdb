@@ -10,6 +10,7 @@
     :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
     :Field Public Shared CalcFns←,⊂'map'
     :Field Public Shared SummaryAPLFns←'+/' '⌈/' '⌊/' '≢'
+    :Field Public Shared ReSummaryAPLFns←'+/' '⌈/' '⌊/' '+/'
     :EndSection ⍝ Constants
 
     :Section Instance Fields            ⍝ The fact that these are public does not mean it is safe to change them
@@ -55,6 +56,7 @@
           r←⊃+/_Counts.counter
         ∇
     :EndProperty
+    :EndSection ⍝ Properties
 
     ∇ Open(folder)
       :Implements constructor
@@ -282,12 +284,14 @@
       :Implements constructor
       :Access Public
       0 CreateOrExtend name folder columns types'' '' ⍝ No data or option
+      Open,⊂folder      ⍝ now open it properly
     ∇
 
     ∇ make5(name folder columns types options)
       :Implements constructor
       :Access Public
       0 CreateOrExtend name folder columns types options'' ⍝ No data or option
+      Open,⊂folder      ⍝ now open it properly
     ∇
 
     ∇ make6(name folder columns types options data)
@@ -363,7 +367,11 @@
           :If ~Exists sf←f⊃ShardFolders ⋄ MkDir sf ⋄ :EndIf
      
           d←data[;shards⍳f]             ⍝ extract records for one shard
-          n←≢⊃d
+          :If create
+              n←≢⊃d
+          :Else
+              n←f⊃_Counts.counter
+          :EndIf
           size←BlockSize×1⌈⌈n÷BlockSize ⍝ At least one block
      
           :If create                    ⍝ # of records in the shard
@@ -629,7 +637,22 @@
       :EndIf
     ∇
 
-    ∇ r←Summarize(ix summary cols groupby);char;m;num;s;indices;fns;cix;allix;allcols;numrecs;blksize;offset;groupfn;t;multi;split;data;recs;groupix;colix;z;sourceix;sourcecols;mapix;calccols;calcix;c
+      getGroupFn←{
+          cols fns groupix colix←⍵
+         ⍝ Only one summarized column
+          1=≢cols:,⊂⍺,'←{(↑[0.5]⍺){⍺,',(1⊃fns),'⍵}⌸⊃⍵}'
+         ⍝ More than one summarized column
+          z←⊂'r←keys ',⍺,' data'
+          z,←(1+1=≢groupix)⌷'keys←↑[0.5]keys' 'keys←⊃keys'
+          z,←⊂'r←',(⍕≢groupix,colix),'↑⍤1⊢keys{⍺,',(1⊃fns),'⍵}⌸⊃data'
+          z,←(1↓⍳≢colix){
+              'r[;',(⍕⍺+≢groupix),']←keys{',⍵,'⍵}⌸',(⍕⍺),'⊃data'
+          }¨1↓fns
+          z
+      }
+
+
+    ∇ r←Summarize(ix summary cols groupby);char;m;num;s;indices;fns;cix;allix;allcols;numrecs;blksize;offset;groupfn;t;multi;split;data;recs;groupix;colix;z;sourceix;sourcecols;mapix;calccols;calcix;c;refns;regroupfn
       ⍝ Read and Summarize specified indices of named columns
       ⍝ Very similar to Read, but not public - called by Query
      
@@ -642,16 +665,10 @@
       colix←allcols⍳cols
      
       fns←(SummaryAPLFns,⊂'')[SummaryFns⍳summary]
+      refns←(ReSummaryAPLFns,⊂'')[SummaryFns⍳summary]
      
-      :If 1=≢cols ⍝ Only one summarized column
-          groupfn←⍎'{(↑[0.5]⍺){⍺,',(1⊃fns),'⍵}⌸⊃⍵}'
-      :Else       ⍝ More than one summarized column
-          z←⊂'r←keys groupfn data'
-          :If 1=≢groupix ⋄ z,←⊂'keys←⊃keys' ⋄ :Else ⋄ z,←⊂'keys←↑[0.5]keys' ⋄ :EndIf
-          z,←⊂'r←',(⍕≢groupix,colix),'↑⍤1⊢keys{⍺,',(1⊃fns),'⍵}⌸⊃data'
-          z,←(1↓⍳≢colix){'r[;',(⍕⍺+≢groupix),']←keys{',⍵,'⍵}⌸',(⍕⍺),'⊃data'}¨1↓fns
-          :If 'groupfn'≢⎕FX z ⋄ ∘∘∘ ⋄ :EndIf
-      :EndIf
+      :If 'groupfn'≢⎕FX'groupfn'getGroupFn cols fns groupix colix ⋄ ∘∘∘ ⋄ :EndIf
+      :If 'regroupfn'≢⎕FX'regroupfn'getGroupFn cols refns groupix colix ⋄ ∘∘∘ ⋄ :EndIf
      
       r←(0,≢allix)⍴0
      
@@ -691,12 +708,16 @@
           :Until offset≥numrecs
      
           :If split ⍝ re-summarize partial results
-              r←r[;groupix]groupfn r[;colix]
+              r←(↓⍉r[;groupix])regroupfn↓⍉r[;colix]
           :EndIf
+      :EndFor
      
-          :For char :In {⍵/⍳⍴⍵}'C'=⊃¨Types[(≢groupby)↑allix] ⍝ Symbol Group By cols
-              r[;char]←mappings[allix[char]].{symbol[⍵]}r[;char]
-          :EndFor
+      :If 1<≢ix ⍝ re-summarize partial results
+          r←(↓⍉r[;groupix])regroupfn↓⍉r[;colix]
+      :EndIf
+     
+      :For char :In {⍵/⍳⍴⍵}'C'=⊃¨Types[(≢groupby)↑allix] ⍝ Symbol Group By cols
+          r[;char]←mappings[allix[char]].{symbol[⍵]}r[;char]
       :EndFor
     ∇
 

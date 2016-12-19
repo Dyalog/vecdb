@@ -4,8 +4,10 @@
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
-    :Field Public Shared Version←'0.2.5' ⍝ Added ability to use Calculated columns
+    :Field Public Shared Version←'0.2.6' ⍝ Parallel DB
     :Field Public Shared TypeNames←,¨'I1' 'I2' 'I4' 'F' 'B' 'C'
+    ⍝ To come: C4=323 indexed chars
+    ⍝          Tn=Fixed with text (no index table)
     :Field Public Shared TypeNums←83 163 323 645 11 163
     :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
     :Field Public Shared CalcFns←,⊂'map'
@@ -20,7 +22,8 @@
     :Field Public NumBlocks←1           ⍝ We start with one block
     :Field Public noFiles←0             ⍝ in-memory database (not supported)
     :Field Public isOpen←0              ⍝ Not yet open
-    :Field Public ShardFolders←⍬        ⍝ List of Shard Folders
+    :Field Public ShardFolders←⍬        ⍝ List of Shard Folders          
+    :Field Public LocalFolders←⍬        ⍝ Shard Folders as seen by slave task
     :Field Public ShardFn←⍬             ⍝ Shard Calculation Function
     :Field Public ShardCols←⍬           ⍝ ShardFn input column indices
     :Field Public ShardSelected←⍬       ⍝ Shards selected
@@ -34,6 +37,7 @@
 
     fileprops←'Name' 'BlockSize' ⍝ To go in comp 4 of meta.vecdb
     eis←{(≡⍵)∊0 1:⊂,⍵ ⋄ ⍵}       ⍝ enclose if simple
+    sizeOf←{(size dr)←⍵ ⋄⌈size×8÷⍨⌊dr÷10} ⍝ size in bytes of ⍵[1] elements of type ⍵[2]
 
     :Section Properties
     :Property Columns
@@ -53,10 +57,12 @@
     :Property Count
     :Access public
         ∇ r←get
-          r←⊃+/_Counts.counter
+          r←⊃⊃+/_Counts[ShardSelected].counter
         ∇
     :EndProperty
     :EndSection ⍝ Properties
+
+    :EndSection
 
     ∇ Open(folder)
       :Implements constructor
@@ -69,9 +75,9 @@
     ⍝ Extract calculation data from meta file
      
       :If 8=2⊃⎕FSIZE tn ⍝ If File format pre-dates calculated columns
-          'unused'⎕FAPPEND tn ⍝ 8
-          'unused'⎕FAPPEND tn ⍝ 9
-          (⍬ ⍬ ⍬)⎕FAPPEND tn  ⍝ 10 Calc Col Names, Source Columns, Data Type
+          'unused'∆FAPPEND tn ⍝ 8
+          'unused'∆FAPPEND tn ⍝ 9
+          (⍬ ⍬ ⍬)∆FAPPEND tn  ⍝ 10 Calc Col Names, Source Columns, Data Type
       :EndIf
      
       (_CalcCols _CalcSources _CalcTypes)←⎕FREAD tn,10 ⍝ Calculated column definitions
@@ -224,7 +230,11 @@
       :Trap 0 ⋄ tn←(file←folder,'meta.vecdb')⎕FSTIE 0
       :Else ⋄ ('Unable to open ',file)⎕SIGNAL 11
       :EndTrap
-      (props(_Columns _Types)ShardFolders(ShardFn ShardCols))←⎕FREAD tn(4 5 6 7)
+      (props(_Columns _Types)ShardFolders(ShardFn ShardCols))←⎕FREAD tn(4 5 6 7)  
+
+      :If 1=⍴⍴ShardFolders ⋄ LocalFolders←ShardFolders         ⍝ Old format: no local folders
+      :Else ⋄ ShardFolders LocalFolders←↓ShardFolders ⋄ :EndIf ⍝ New format allows spec of both
+
       n←≢_Columns
       mappings←⎕NS¨n⍴⊂''
       mappings.Type←0 ⍝ Not cal'd or mapped (yet)
@@ -235,17 +245,19 @@
       s←≢ShardFolders
      
       :If 0=⍴shards     ⍝ No explicit selection of shards
-          ShardSelected←⍳s
+          ShardSelected←⍳s                       
+          shardfolders←ShardFolders
       :Else
           'Invalid Shard Selection'⎕SIGNAL(∧/shards∊⍳s)↓11
-          ShardSelected←shards
+          ShardSelected←shards                    
+          shardfolders←LocalFolders
       :EndIf
       AllShards←s=≢ShardSelected
      
       Shards←⎕NS¨¨s⍴⊂n⍴⊂''
       Shards.name←s⍴⊂_Columns                ⍝ Column Names
       Shards.type←s⍴⊂_Types                  ⍝ Types
-      Shards.file←(n/¨⊂¨ShardFolders),¨¨(,∘'.vector')¨¨s⍴⊂(⍕¨⍳n) ⍝ Vector file names
+      Shards.file←(n/¨⊂¨shardfolders),¨¨(,∘'.vector')¨¨s⍴⊂(⍕¨⍳n) ⍝ Vector file names
      
       :If 0≠⍴ShardFn ⋄ findshard←⍎ShardFn ⋄ :EndIf ⍝ Define shard calculation function
      
@@ -268,7 +280,7 @@
      
       :For i :In ShardSelected
           s←i⊃Shards
-          _Counts[i].counter←645 1 ⎕MAP((i⊃ShardFolders),'counters.vecdb')'W' ⍝ Map record counter
+          _Counts[i].counter←645 1 ⎕MAP((i⊃shardfolders),'counters.vecdb')'W' ⍝ Map record counter
           :For col :In ⍳≢s
               (col⊃s).vector←(types[col],¯1)⎕MAP(col⊃s).file'W'
           :EndFor
@@ -301,7 +313,7 @@
       Open,⊂folder      ⍝ now open it properly
     ∇
 
-    ∇ extend CreateOrExtend(name folder columns types options data);i;s;offset;tn;type;length;col;size;n;dr;f;shards;sf;create;newcols;metafile;dix;d;newchars
+    ∇ extend CreateOrExtend(name folder columns types options data);i;s;offset;tn;type;length;col;size;n;dr;f;shards;sf;create;newcols;metafile;dix;d;newchars;filename;temp;ai3
     ⍝ Create (extend=0) a new database or extend an existing one
     ⍝ Called from constructors and public method AddColumns
       create←extend=0   ⍝ for readability
@@ -331,7 +343,10 @@
      
       ⍝ Set defaults for sharding (1 shard)
           ShardFolders,←(0=⍴ShardFolders)/⊂folder
-          ShardFolders←AddSlash¨ShardFolders
+          ShardFolders←AddSlash¨ShardFolders   
+          :If 0=⎕NC 'LocalFolders' ⋄ LocalFolders←ShardFolders ⋄ :EndIf
+          LocalFolders←AddSlash¨LocalFolders 
+          shardfolders←ShardFolders ⍝ When creating we have the full view
           ShardCols←,ShardCols
           :If 0≠⍴ShardFn ⋄ findshard←⍎ShardFn ⋄ :EndIf  ⍝ Define shard calculation function
           (Name _Columns _Types)←name columns types     ⍝ Set Class fields
@@ -348,7 +363,7 @@
       :For i :In newchars/newcols ⍝ Create symbol files for CHAR fields
           col←i⊃mappings
           dix←newcols⍳i                       ⍝ data index
-          col.symbol←∪dix⊃data                ⍝ Unique symbols in input data
+          col.symbol←{⍵[∪⍳⍨↑⍵]}dix⊃data       ⍝ Unique symbols in input data
           col.file←folder,(⍕i),'.symbol'      ⍝ Symbol file name in main folder
           col.symbol PutSymbols col.file      ⍝ Read symbols
           col.(SymbolIndex←symbol∘⍳)          ⍝ Create lookup function
@@ -364,8 +379,7 @@
       :EndIf
      
       :For f :In ⍳≢ShardFolders
-          :If ~Exists sf←f⊃ShardFolders ⋄ MkDir sf ⋄ :EndIf
-     
+          3 ⎕MKDIR sf←f⊃ShardFolders     
           d←data[;shards⍳f]             ⍝ extract records for one shard
           :If create
               n←≢⊃d
@@ -381,36 +395,56 @@
           :EndIf
      
           :For i :In newcols            ⍝ For each column being added
+              ai3←⎕AI[3]
               dr←(TypeNames⍳_Types[i])⊃TypeNums
-              tn←(sf,(⍕i),'.vector')⎕NCREATE 0
-              (size↑(newcols⍳i)⊃d)⎕NAPPEND tn dr
+              tn←(filename←sf,(⍕i),'.vector')⎕NCREATE 0
+              (sizeOf size dr)⎕NRESIZE tn
               ⎕NUNTIE tn
+              :If 0≠≢⊃d ⍝ if there is some data to write
+              temp←dr ¯1 ⎕MAP filename'W'
+              temp[]←size↑(newcols⍳i)⊃d
+              ⎕EX'temp'                                
+              :EndIf
+              ⍝ 'col ',(⍕i),': ',⍕⎕ai[3]-ai3
           :EndFor
       :EndFor
      
       :If create
-          tn←metafile ⎕FCREATE 0
-          ('vecdb ',Version)⎕FAPPEND tn    ⍝ 1
-          'See github.com/Dyalog/vecdb/doc/Implementation.md'⎕FAPPEND tn ⍝ 2
-          'unused'⎕FAPPEND tn              ⍝ 3
-          (fileprops(⍎¨fileprops))⎕FAPPEND tn ⍝ 4 (Name BlockSize)
-          (_Columns _Types)⎕FAPPEND tn     ⍝ 5
-          ShardFolders ⎕FAPPEND tn         ⍝ 6
-          (ShardFn ShardCols)⎕FAPPEND tn   ⍝ 7
+          tn←metafile (⎕FCREATE⍠3) 0
+          ('vecdb ',Version)∆FAPPEND tn    ⍝ 1 
+          'See github.com/Dyalog/vecdb/doc/Implementation.md'∆FAPPEND tn ⍝ 2
+          'unused'∆FAPPEND tn              ⍝ 3
+          (fileprops(⍎¨fileprops))∆FAPPEND tn ⍝ 4 (Name BlockSize)
+          (_Columns _Types)∆FAPPEND tn     ⍝ 5
+          ((2,≢ShardFolders)⍴ShardFolders,LocalFolders) ∆FAPPEND tn ⍝ 6
+          (ShardFn ShardCols)∆FAPPEND tn   ⍝ 7 
+          'unused'∆FAPPEND tn              ⍝ 8
+          'unused'∆FAPPEND tn              ⍝ 9
+          (⍬ ⍬ ⍬)∆FAPPEND tn    ⍝ 10 Calc Col Names, Source Columns, Data Type
      
       :Else ⍝ Extending
           tn←metafile ⎕FTIE 0
           (_Columns _Types)⎕FREPLACE tn 5
       :EndIf
       ⎕FUNTIE tn
+    ∇     
+    
+    ∇X ∆FAPPEND Y
+    ⍝ Work-around for Samba on Mac
+    X ⎕FAPPEND Y  
+    ⎕FUNTIE ⍬    
     ∇
 
     ∇ (shards data)←cix ShardData data;six;s;char;rawdata;sym;c;counts;m
      ⍝ Shards is a vector of shards to be updated
      ⍝ data has one column per shard, and one row per column
      
-      rawdata←data
-      :If 1=≢ShardFolders ⍝ Data will necessarily all be in the 1st shard then!
+      :If 0=≢⊃rawdata←data
+          shards←⍬ ⋄ data←0/⍪data
+          →0
+      :EndIf
+
+      :If 1=≢shardfolders ⍝ Data will necessarily all be in the 1st shard then!
           shards←,1 ⋄ data←⍪data
      
       :Else ⍝ Database *is* sharded
@@ -447,17 +481,18 @@
       :EndIf
     ∇
 
-    ∇ ExtendShard(folder cols count data);i;file;tn;Type;char;tns;sym;m;ix;fp;dr;col
+    ∇ ExtendShard(folder cols count data);i;file;tn;Type;char;tns;sym;m;ix;fp;dr;col;offset;n
     ⍝ Extend a Shard by count items
      
       :For i :In ⍳≢cols ⍝ For each column
           col←i⊃cols
           dr←(TypeNames⍳⊂col.type)⊃TypeNums
-          col.⎕EX'vector'                    ⍝ Remove memory map
-          tn←col.file ⎕NTIE 0
-          (count↑i⊃data)⎕NAPPEND tn,dr
+          col.⎕EX'vector'                      ⍝ Remove memory map
+          offset←⎕NSIZE tn←col.file ⎕NTIE 0
+          (offset+sizeOf count dr)⎕NRESIZE tn  ⍝ Extend the file
           ⎕NUNTIE tn
-          col.vector←(dr,¯1)⎕MAP col.file'W' ⍝ Re-establish map
+          n←≢col.vector←dr ¯1 ⎕MAP col.file'W' ⍝ Re-establish map
+          col.vector[(n-count)+⍳count]←count↑i⊃data ⍝ update with new data
       :EndFor
     ∇
 
@@ -477,7 +512,7 @@
      
       :If 9=⎕NC'options'
           :For name :In options.⎕NL-2
-              :If (⊂name)∊'BlockSize' 'InitBlocks' 'Folders' 'ShardCols' 'ShardFolders' 'ShardFn'
+              :If (⊂name)∊'BlockSize' 'InitBlocks' 'Folders' 'ShardCols' 'ShardFolders' 'LocalFolders' 'ShardFn'
                   ⍎name,'←options.',name
               :Else
                   ('Invalid option name: ',name)⎕SIGNAL 11
@@ -522,9 +557,9 @@
      
       ⎕EX'Shards' ⍝ We will reopen the file at the end, need to remove maps
      
-      :For f :In ⍳≢ShardFolders
+      :For f :In ⍳≢shardfolders
           colix←1
-          sf←f⊃ShardFolders
+          sf←f⊃shardfolders
           :For c :In ⍳≢_Columns
               tn←(file←sf,(⍕c),'.vector')⎕NTIE 0
               sym←{22::0 ⋄ (Folder,(⍕c),'.symbol')⎕NTIE ⍵}0
@@ -789,7 +824,7 @@
               append←(≢_Columns)⍴⊂⍬
               append[cix]←canupdate↓¨d       ⍝ Data which was not updated
               growth←BlockSize×(length-canupdate)(⌈÷)BlockSize ⍝ How many records to add to the Shard
-              ExtendShard(s⊃ShardFolders)Cols growth append
+              ExtendShard(s⊃shardfolders)Cols growth append
           :EndIf
      
           _Counts[s].counter[1]←count+length ⍝ Update (mapped) counter
@@ -822,7 +857,7 @@
       r←0
     ∇
 
-    ∇ r←Delete folder;file;tn;folders;files;f
+    ∇ r←Delete folder;file;tn;folders;files;f;shards
       :Access Public Shared
       ⍝ Erase a vecdb file without opening it first (it might be too damaged to open)
       ⍝   Does check whether there is a meta file in the folder
@@ -831,12 +866,17 @@
       folder←AddSlash folder
       'Folder not found'⎕SIGNAL(DirExists folder)↓22           ⍝ Not there
       'Not a vecdb'⎕SIGNAL(Exists file←folder,'meta.vecdb')↓22 ⍝ Paranoia
+      tn←file ⎕FTIE 0
+      folders←(⎕FREAD tn 6),⊂folder ⍝ shards first   
+      file ⎕FERASE tn
      
-      :If isWindows
-          ⎕CMD'rmdir "',folder,'" /s /q'
-      :Else
-          1 _SH'rm -r ',folder
-      :EndIf
+      :For folder :In folders
+          :If isWindows
+              ⎕CMD'rmdir "',folder,'" /s /q'
+          :Else
+              1 _SH'rm -r ',folder
+          :EndIf
+      :EndFor
      
       r←~DirExists folder
     ∇
@@ -908,9 +948,10 @@
       :If (⊂APLVersion)∊'*nix' 'Mac' ⋄ ((f='\')/f)←'/' ⋄ :EndIf
     ∇
 
-    ∇ r←AddSlash path
-    ⍝ Ensure folder name has trailing slash
-      r←path,((¯1↑path)∊'/\')↓⊃isWindows⌽'/\'
+    ∇ r←AddSlash path;slash
+    ⍝ Ensure folder name has trailing slash             
+      slash←⊃('/\'∩path),'/' ⍝ use / unless path ONLY contains \
+      r←path,((¯1↑path)∊'/\')↓slash
     ∇
 
     ∇ r←Exists path;GFA

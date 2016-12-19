@@ -2,11 +2,11 @@
 
 ## Currently prioritised ##
 
-List updated February 23rd, 2016.
+List updated December 14th, 2016.
 
-1. Parallel queries
+1. Parallel queries (first pass done)
 
-## To be done sometime later ##
+## To be done soon ##
 
 1. Generalization of Symbol Tables + Add One, Four & Eight Byte Symbol Tables
 1. Enhance queries to support conditional functions... Eg. ('price' '>' 100)('Name' 'like' 'A%')
@@ -14,6 +14,8 @@ List updated February 23rd, 2016.
 1. Database status reporting function (# shards, records in each, statistics, etc)
 1. Add a "Char" type which does not use a symbol table
 1. User Guide
+
+## More speculative ideas ##
 1. RESTful / ODATA? API
 1. Timestamped non-overwriting updates
 1. Delete records (AFTER non-overwriting updates)

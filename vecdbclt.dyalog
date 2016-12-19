@@ -31,44 +31,44 @@
       :EndIf
     ∇
 
-    ∇ r←SrvDo (client cmd)
+    ∇ r←SrvDo(client cmd)
       ⍝ Send a command to vecdb and await the result
      
       r←SrvRcv SrvSend client cmd
     ∇
 
-    ∇cmd←SrvSend (client cmd);r   
+    ∇ cmd←SrvSend(client cmd);r
     ⍝ Return command name to wait on
       :If 0=⊃r←##.DRC.Send client cmd
           cmd←2⊃r
       :Else
-          (⍕r) ⎕SIGNAL 11
+          (⍕r)⎕SIGNAL 11
       :EndIf
     ∇
 
     ∇ r←SrvRcv c;done;wr;z
     ⍝ Wait for result from vecdb, signal DOMAIN ERROR if it fails
      
-          :Repeat
-              :If ~done←∧/100 0≠1⊃r←##.DRC.Wait c 10000 ⍝ Only wait 10 seconds
+      :Repeat
+          :If ~done←∧/100 0≠1⊃r←##.DRC.Wait c 10000 ⍝ Only wait 10 seconds
      
-                  :Select 3⊃r
-                  :Case 'Error'
+              :Select 3⊃r
+              :Case 'Error'
+                  done←1
+              :Case 'Progress'
+                  ⎕←'Progress: ',4⊃r
+              :Case 'Receive'
+                  :If 0=⊃r
+                      r←4⊃r
+                  :AndIf 0=⊃r
+                      r←2⊃r
                       done←1
-                  :Case 'Progress'
-                      ⎕←'Progress: ',4⊃r
-                  :Case 'Receive'
-                      :If 0=⊃r
-                          r←4⊃r
-                      :AndIf 0=⊃r
-                          r←2⊃r
-                          done←1
-                      :Else
-                          ('Error: ',,⍕r)⎕SIGNAL 11
-                      :EndIf
-                  :EndSelect
-              :EndIf
-          :Until done
+                  :Else
+                      ('Error: ',,⍕r)⎕SIGNAL 11
+                  :EndIf
+              :EndSelect
+          :EndIf
+      :Until done
     ∇
 
     ∇ r←Open folder
@@ -93,7 +93,7 @@
 
         ∇ {r}←Shutdown msg
           :Access Public
-          :If 0=⊃r←##.SrvDo CONNECTION('Shutdown' msg)
+          :If 0=⊃r←##.SrvDo CONNECTION('Shutdown'msg)
               {}#.DRC.Close CONNECTION
               CONNECTION←''
           :EndIf
@@ -101,7 +101,7 @@
 
         ∇ Close
           :Access Public
-          :If 0=⊃r←##.SrvDo CONNECTION('Close' ⍬)
+          :If 0=⊃r←##.SrvDo CONNECTION('Close'⍬)
               {}#.DRC.Close CONNECTION
               CONNECTION←''
           :EndIf
@@ -110,50 +110,54 @@
         ∇ r←Count
           :Access Public
           :If 0≠⍴CONNECTION
-             r←##.SrvDo CONNECTION('Count' (FOLDER ⍬)) 
-             r←+/r
+              r←##.SrvDo CONNECTION('Count'(FOLDER ⍬))
+              r←+/r
           :Else
-              'CONNECTION CLOSED' ⎕SIGNAL 11
+              'CONNECTION CLOSED'⎕SIGNAL 11
           :EndIf
         ∇
 
         ∇ r←Append args
           :Access Public
           :If 0≠⍴CONNECTION
-             r←##.SrvDo CONNECTION('Append' (FOLDER args))
+              r←##.SrvDo CONNECTION('Append'(FOLDER args))
           :Else
-              'CONNECTION CLOSED' ⎕SIGNAL 11
+              'CONNECTION CLOSED'⎕SIGNAL 11
           :EndIf
         ∇
 
         ∇ r←Query args
           :Access Public
           :If 0≠⍴CONNECTION
-             r←##.SrvDo CONNECTION('Query' (FOLDER args))
-             r←⊃⍪/r
+              r←##.SrvDo CONNECTION('Query'(FOLDER args))
+              :If 2=⍴⍴⊃r
+                  r←⊃⍪/r
+              :Else
+                  r←⊃,¨/r
+              :EndIf
           :Else
-              'CONNECTION CLOSED' ⎕SIGNAL 11
+              'CONNECTION CLOSED'⎕SIGNAL 11
           :EndIf
         ∇
 
         ∇ r←Read args
           :Access Public
           :If 0≠⍴CONNECTION
-             r←##.SrvDo CONNECTION('Read' (FOLDER args))
-             r←⊃,¨/r
+              r←##.SrvDo CONNECTION('Read'(FOLDER args))
+              r←⊃,¨/r
           :Else
-              'CONNECTION CLOSED' ⎕SIGNAL 11
+              'CONNECTION CLOSED'⎕SIGNAL 11
           :EndIf
         ∇
 
         ∇ r←Update args
-        :Access Public                     
+          :Access Public
           :If 0≠⍴CONNECTION
-             r←##.SrvDo CONNECTION('Update' (FOLDER args))
+              r←##.SrvDo CONNECTION('Update'(FOLDER args))
           :Else
-              'CONNECTION CLOSED' ⎕SIGNAL 11
+              'CONNECTION CLOSED'⎕SIGNAL 11
           :EndIf
-
+         
         ∇
 
     :EndClass

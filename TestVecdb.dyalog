@@ -99,8 +99,8 @@
      
       numrecs←10000000 ⍝ 10 million records
       memstats 1       ⍝ Clear memory statistics
-      :If (8×numrecs)>2000⌶16
-          ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(8×numrecs)÷1000000)',Mb ***'
+      :If (100×numrecs)>2000⌶16
+          ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(100×numrecs)÷1000000),'MB ***'
       :EndIf
      
       folder←path,'/',(name←'testdb1'),'/'
@@ -119,7 +119,7 @@
      
       recs←numrecs(⌊÷)2
       (options←⎕NS'').BlockSize←numrecs(⌊×)0.6 ⍝ Provoke block overflow
-      params←name folder columns types options(recs↑¨data)
+      params←name folder columns types options (recs↑¨data)
       TEST←'Creating db & inserting ',(fmtnum recs),' records'
       db←⎕NEW time #.vecdb params
       assert db.isOpen

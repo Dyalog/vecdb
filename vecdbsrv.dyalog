@@ -41,8 +41,9 @@
       r←⍬             ⍝ Need a result
     ∇
 
-    ∇ {r}←Init config;db;i;j;slave;path;ws
-     ⍝ Intialise the vecdb server
+    ∇ {r}←Init config;db;i;j;slave;path;ws;tn
+     ⍝ Intialise the vecdb server  
+      ∘∘∘
       
       :Trap 6 ⋄ source←SALT_Data.SourceFile
       :Else ⋄ source←⎕WSID
@@ -56,10 +57,14 @@
      
       (DBs Server)←config.(DBs Server)
       TOKEN←{⎕RL←0 ⋄ ⎕PP←10 ⋄ 2↓⍕?0}0
-      DBFolders←DBs.Folder
+      DBFolders←DBs.Folder       
      
       :For i :In ⍳≢DBs ⍝ Launch all the processes
-          db←i⊃DBs
+          db←i⊃DBs                          
+          tn←(db.Folder,'meta.vecdb') ⎕FSTIE 0
+          db.((_Columns _Types) (ShardFn ShardCols))←⎕FREAD tn (5 7)
+          ⎕funtie tn
+
           :For j :In ⍳≢db.Slaves
               slave←j⊃db.Slaves
               slave.Port←NEXTPORT
@@ -98,8 +103,10 @@
       r←⍬             ⍝ Need a result
     ∇
 
-    ∇ (sdata is)←SlavePartition(cmd slaves data);ixs;cols;new;slave;slave_recs
-     
+    ∇ (sdata is)←SlavePartition(cmd slaves data);ixs;cols;new;slave;slave_recs;cix
+ ⍝ Return sdata: command to send to each slave
+ ⍝           is: indices into slaves
+      
       Shards←∊slaves.Shards
       ShardSlaves←(≢¨slaves.Shards)/⍳≢slaves.Shards
      
@@ -119,7 +126,17 @@
               sdata←↓(slave{⊂⍵}⌸ixs),(⊂cols),⍪{slave_recs{⊂⍵}⌸⍵}¨new
               ∘∘∘
           :EndIf
-          is←⍳≢sdata
+          is←⍳≢sdata  
+      :Case 'Append'
+          (cols new)←data
+          :If ∧/db.ShardCols∊cix←db._Columns⍳cols 
+              slave←ShardSlaves⍳(⍎db.ShardFn) new[cix⍳db.ShardCols]              
+              sdata←{slave{⍺,⊂⍵}⌸⍵}¨new
+              is←(⊃sdata)[;1]        ⍝ slave indices
+              sdata←↓(⊂cols),⍪↓⊃,/0 1∘↓¨sdata ⍝ data pertaining to each slave
+          :Else
+          ∘∘∘ ⍝ Unable to shard the data
+          :EndIf
       :Else
           sdata←,⊂data ⋄ is←(≢slaves)/1
       :EndSelect
@@ -143,7 +160,7 @@
       :ElseIf (⊂cmd)∊'Append' 'Count' 'Query' 'Update' 'Read'
           :If (≢DBs)<i←DBFolders⍳arg[1]
               r←999('Database not found: ',⊃arg)
-          :Else
+          :Else                                    
               slaves←(db←i⊃DBs).Slaves
               (sdata ixs)←SlavePartition cmd slaves(2⊃arg)
               cmds←(≢slaves)⍴⊂''
@@ -180,7 +197,7 @@
           args←'VECDBSLAVE="',target,'" SHARDS="',(⍕shards),'" PORT=',(⍕port),' TOKEN="',TOKEN,'"'
       :Else
           args←'VECDBSRV="',target,'" PORT=',(⍕port)
-      :EndIf
+      :EndIf        
       proc←⎕NEW ##.APLProcess(ws args runtime)
     ∇
 

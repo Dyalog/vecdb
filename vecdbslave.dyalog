@@ -92,8 +92,9 @@
           r←0 (⍎cmd,' obj arg')
      
       :ElseIf (⊂cmd)∊'Append' 'Count' 'Query' 'Update' 'Read' 
-          :If 0≠≢(CONNS⍳⊂Conn)⊃TOKENS,⊂''
-              :Trap 9999 
+          :If 0≠≢(CONNS⍳⊂Conn)⊃TOKENS,⊂''                            
+              :Trap 9999                                
+                 ∘∘∘
                  :If cmd≡'Count' ⋄ r←0 DB.Count 
                  :Else ⋄ r←0 ((DB⍎cmd) arg)
                  :EndIf

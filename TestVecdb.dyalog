@@ -8,18 +8,18 @@
     (⎕IO ⎕ML)←1 1
     LOG←1
 
-    ∇ z←RunAll;path;source
+    ∇ z←RunAll;path;source;tests
       ⎕FUNTIE ⎕FNUMS ⋄ ⎕NUNTIE ⎕NNUMS
       :Trap 6 ⋄ source←SALT_Data.SourceFile
       :Else ⋄ source←⎕WSID
       :EndTrap
       path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
       ⎕←'Testing vecdb version ',#.vecdb.Version
-      ⎕←Basic
-      ⎕←Sharding
+      tests←{⍵/⍨(⊂'test_')∊⍨5↑¨⍵}⎕NL-3
+      ⍎¨tests
     ∇
 
-    ∇ z←Sharding;columns;data;options;params;folder;types;name;db;ix;rotate;newcols;colsnow;m;db1;db2;ix2;ix1;t;i
+    ∇ z←test_sharding;columns;data;options;params;folder;types;name;db;ix;rotate;newcols;colsnow;m;db1;db2;ix2;ix1;t;i
      ⍝ Test database with 2 shards
      ⍝ Also acts as test for add/remove columns
      
@@ -94,13 +94,13 @@
       z←'Sharding Tests Completed'
     ∇
 
-    ∇ z←Basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square;charvalues;charsmapped;zzz;OddC
+    ∇ z←test_basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square;charvalues;charsmapped;zzz;OddC
      ⍝ Create and delete some tables
      
       numrecs←10000000 ⍝ 10 million records
       memstats 1       ⍝ Clear memory statistics
-      :If (100×numrecs)>2000⌶16
-          ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(100×numrecs)÷1000000),'MB ***'
+      :If (8×numrecs)>2000⌶16
+          ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(8×numrecs)÷1000000)',Mb ***'
       :EndIf
      
       folder←path,'/',(name←'testdb1'),'/'
@@ -119,7 +119,7 @@
      
       recs←numrecs(⌊÷)2
       (options←⎕NS'').BlockSize←numrecs(⌊×)0.6 ⍝ Provoke block overflow
-      params←name folder columns types options (recs↑¨data)
+      params←name folder columns types options(recs↑¨data)
       TEST←'Creating db & inserting ',(fmtnum recs),' records'
       db←⎕NEW time #.vecdb params
       assert db.isOpen
@@ -231,6 +231,91 @@
      
       z←'Creation Tests Completed'
     ∇
+
+    ∇ (name folder)←preTest dummy
+      name←⊃1↓⎕SI
+      folder←'./',name,'/'
+      ⎕←'Clearing: ',folder
+      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
+    ∇
+
+    :Section Tests
+
+    ∇ test_add_columns_in_sequence;name;folder;options;numrecs;columns;types;params;db;data
+      name folder←preTest ⍬
+     
+      numrecs←10
+      columns←'first' 'second' 'third'
+      types←'I1' 'F' 'C'
+      data←(numrecs(?⍴)127)(0.1×numrecs(?⍴)1000)(numrecs⍴'abc' 'def' 'xyz')
+      (options←⎕NS'').BlockSize←8 ⍝ Provoke block overflow
+      params←name folder(,1⌷columns)(,1⌷types)options(,1⌷data)
+      TEST←'Creating db & inserting columns in sequence'
+      db←⎕NEW time #.vecdb params
+      assert(,1⌷data)≡db.Read(1,⍪⎕NULL)(1⊃columns)
+      db.AddColumns,¨2⌷¨columns types
+      db.Update(1,⍪⍳10)(2⊃columns)(2⊃data)
+      assert(,2⌷data)≡db.Read(1,⍪⎕NULL)(2⊃columns)
+      db.AddColumns 3⌷¨columns types
+      db.Update(⊂1,⍪⍳10),3⊃¨columns data
+      assert(3⊃data)≡⊃db.Read(1,⍪⎕NULL)(3⊃columns)
+      assert 0=db.Erase
+    ∇
+
+    ∇ test_define_block_size;name;folder;options;params;db;em
+      name folder←preTest ⍬
+      (options←⎕NS'').BlockSize←10
+      params←name folder(,⊂'field')(,⊂'I1')options
+      em←'Block size must be a multiple of 8'
+      em ⎕NEW expecterror #.vecdb params
+      options.BlockSize←64
+      db←⎕NEW #.vecdb params
+      assert db.isOpen
+      assert 0=db.Erase
+    ∇
+
+    ∇ test_summary_fns;name;folder;options;columns;types;params;db;data;sort;comp
+      name folder←preTest ⍬
+     
+      columns←'id' 'name' 'price' 'quantity'
+      types←'I1' 'C' 'F' 'I1'
+      data←,⊂9⍴1 2
+      data,←⊂3/'ett' 'due' 'three'
+      data,←⊂0.25×⍳9
+      data,←⊂⌽⍳9
+     
+      options←⎕NS''
+      options.ShardFolders←(folder,'Shard')∘,¨'12'
+      options.(ShardFn ShardCols)←'{2-2|⊃⍵}' 1
+     
+      params←name folder columns types options data
+      db←⎕NEW #.vecdb params
+      sort←{(⊂⍋↑⊃↓⍉⍵)⌷⍵}
+      comp←sort⍨≡sort
+      assert(+⌿⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')⍬
+      assert((1⊃data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')'id'
+      assert((2⊃data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')'name'
+      assert((⍉↑2↑data){⍺,+⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('sum price' 'sum quantity')('id' 'name')
+     
+      assert(⌈⌿⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')⍬
+      assert((1⊃data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')'id'
+      assert((2⊃data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')'name'
+      assert((⍉↑2↑data){⍺,⌈⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('max price' 'max quantity')('id' 'name')
+     
+      assert(⌊⌿⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')⍬
+      assert((1⊃data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')'id'
+      assert((2⊃data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')'name'
+      assert((⍉↑2↑data){⍺,⌊⌿⍵}⌸⍉↑data[3 4])comp db.Query ⍬('min price' 'min quantity')('id' 'name')
+     
+      assert(2/≢⊃data)comp db.Query ⍬('count price' 'count quantity')⍬
+      assert((1⊃data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')'id'
+      assert((2⊃data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')'name'
+      assert((⍉↑2↑data){⍺,2/≢⍵}⌸⍉↑data[3 4])comp db.Query ⍬('count price' 'count quantity')('id' 'name')
+     
+      assert 0=db.Erase
+    ∇
+
+    :EndSection
 
     ∇ x←output x
       :If LOG ⋄ ⍞←x ⋄ :EndIf

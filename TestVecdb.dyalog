@@ -6,20 +6,82 @@
     ⍝   returns memory usage statistics (result of "memstats 0")
 
     (⎕IO ⎕ML)←1 1
-    LOG←1
 
-    ∇ z←RunAll;path;source;tests
+    ∇ z←Run selection;path;source;tests;i;TIMELOG;LOG;m
+     LOG←1
       ⎕FUNTIE ⎕FNUMS ⋄ ⎕NUNTIE ⎕NNUMS
       :Trap 6 ⋄ source←SALT_Data.SourceFile
       :Else ⋄ source←⎕WSID
-      :EndTrap
-      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source
-      ⎕←'Testing vecdb version ',#.vecdb.Version
-      tests←{⍵/⍨(⊂'test_')∊⍨5↑¨⍵}⎕NL-3
-      ⍎¨tests
-    ∇
+      :EndTrap   
+      path←{(-⌊/(⌽⍵)⍳'\/')↓⍵}source  
 
-    ∇ z←test_sharding;columns;data;options;params;folder;types;name;db;ix;rotate;newcols;colsnow;m;db1;db2;ix2;ix1;t;i
+      ⎕←'Testing vecdb version ',#.vecdb.Version  
+      :If selection≡'required' ⋄ selection←'' ⋄ :EndIf ⍝ Nothing like that yet  
+      
+      tests←{⍵/⍨(⊂'test_')∊⍨5↑¨⍵}⎕NL-3 
+      :If 0≠≢selection
+         :If 1=≡selection ⋄ selection←,⊂selection ⋄ :EndIf
+         :If ∧/m←selection∊tests ⋄ tests←selection
+         :Else ⋄ ('tests not found: ',(~m)/selection) ⎕SIGNAL 11
+         :EndIf
+      :EndIf           
+      
+      :For i :In ⍳≢tests
+         TIMELOG←0 2⍴0
+         ⍎i⊃tests
+         :If LOG∧0≠≢TIMELOG
+             ⎕←(i⊃tests) TIMELOG
+         :EndIf
+      :EndFor
+    ∇
+    
+    ∇ (name folder)←preTest dummy
+      name←⊃1↓⎕SI
+      folder←'./',name,'/'
+      ⎕←'Clearing: ',folder
+      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
+    ∇
+    
+    ∇ (db data columns time)←makeBasicDB numrecs
+
+       memstats 1       ⍝ Clear memory statistics
+      :If (100×numrecs)>2000⌶16
+          ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(100×numrecs)÷1000000)',Mb ***'
+      :EndIf
+     
+      folder←path,'/',(name←'testdb1'),'/'
+      ⎕←'Clearing: ',folder
+      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
+     
+      ⎕←'Creating: ',folder←path,'/',(name←'testdb1'),'/'
+      columns←'col_'∘,¨types←#.vecdb.TypeNames
+      assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FBC' ⍝ Types have been added?
+      range←2*¯1+8×1 2 4 6 0.25
+      data←numrecs⍴¨¯1+⍳¨numrecs⌊range
+      data←data×0.1*'F'=⊃¨(≢data)↑types ⍝ Make float values where necessary
+      data←data,⊂numrecs⍴charvalues←{1↓¨(⍵=⊃⍵)⊂⍵}'/zero/one/two/three/four/five/six/seven/eight/nine/ten/eleven/one dozen/thirteen/fourteen/fifteen'
+     
+      :If LOG ⋄ ⎕←'Size of input data: ',fmtnum ⎕SIZE'data' ⋄ :EndIf
+     
+      recs←numrecs(⌊÷)2
+      (options←⎕NS'').BlockSize←numrecs(⌊×)0.6 ⍝ Provoke block overflow
+      params←name folder columns types options(recs↑¨data)
+      TEST←'Creating db & inserting ',(fmtnum recs),' records'
+      db←⎕NEW time #.vecdb params
+      assert db.isOpen
+      assert db.Count=recs
+      assert 0=db.Close
+      assert 0=db.isOpen
+     
+      TEST←'Reopen database'
+      db←(⎕NEW time)#.vecdb(,⊂folder) ⍝ Open it again
+      assert db.isOpen
+      assert db.Count=recs
+     ∇
+
+    :Section Tests
+
+    ∇ test_sharding;columns;data;options;params;folder;types;name;db;ix;rotate;newcols;colsnow;m;db1;db2;ix2;ix1;t;i;z
      ⍝ Test database with 2 shards
      ⍝ Also acts as test for add/remove columns
      
@@ -98,39 +160,6 @@
      ⍝ Create and delete some tables
      
       numrecs←10000000 ⍝ 10 million records
-      memstats 1       ⍝ Clear memory statistics
-      :If (8×numrecs)>2000⌶16
-          ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(8×numrecs)÷1000000)',Mb ***'
-      :EndIf
-     
-      folder←path,'/',(name←'testdb1'),'/'
-      ⎕←'Clearing: ',folder
-      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
-     
-      ⎕←'Creating: ',folder←path,'/',(name←'testdb1'),'/'
-      columns←'col_'∘,¨types←#.vecdb.TypeNames
-      assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FBC' ⍝ Types have been added?
-      range←2*¯1+8×1 2 4 6 0.25
-      data←numrecs⍴¨¯1+⍳¨numrecs⌊range
-      data←data×0.1*'F'=⊃¨(≢data)↑types ⍝ Make float values where necessary
-      data←data,⊂numrecs⍴charvalues←{1↓¨(⍵=⊃⍵)⊂⍵}'/zero/one/two/three/four/five/six/seven/eight/nine/ten/eleven/one dozen/thirteen/fourteen/fifteen'
-     
-      :If LOG ⋄ ⎕←'Size of input data: ',fmtnum ⎕SIZE'data' ⋄ :EndIf
-     
-      recs←numrecs(⌊÷)2
-      (options←⎕NS'').BlockSize←numrecs(⌊×)0.6 ⍝ Provoke block overflow
-      params←name folder columns types options(recs↑¨data)
-      TEST←'Creating db & inserting ',(fmtnum recs),' records'
-      db←⎕NEW time #.vecdb params
-      assert db.isOpen
-      assert db.Count=recs
-      assert 0=db.Close
-      assert 0=db.isOpen
-     
-      TEST←'Reopen database'
-      db←(⎕NEW time)#.vecdb(,⊂folder) ⍝ Open it again
-      assert db.isOpen
-      assert db.Count=recs
       TEST←'Reading them back:'
       assert(recs↑¨data)≡db.Read time(⍳recs)columns
      
@@ -231,15 +260,6 @@
      
       z←'Creation Tests Completed'
     ∇
-
-    ∇ (name folder)←preTest dummy
-      name←⊃1↓⎕SI
-      folder←'./',name,'/'
-      ⎕←'Clearing: ',folder
-      :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
-    ∇
-
-    :Section Tests
 
     ∇ test_add_columns_in_sequence;name;folder;options;numrecs;columns;types;params;db;data
       name folder←preTest ⍬

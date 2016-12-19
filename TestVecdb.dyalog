@@ -42,18 +42,19 @@
       :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
     ∇
     
-    ∇ (db data columns time)←makeBasicDB numrecs
+    ∇ (db data columns)←makeBasicDB numrecs;folder;name;range;types;tnms;recs;options;params;charvalues
 
-       memstats 1       ⍝ Clear memory statistics
-      :If (100×numrecs)>2000⌶16
+      memstats 1       ⍝ Clear memory statistics
+      (numrecs recs)←2↑numrecs,⌊numrecs÷2
+      :If (100×numrecs)>2000⌶16                       
           ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(100×numrecs)÷1000000)',Mb ***'
       :EndIf
      
-      folder←path,'/',(name←'testdb1'),'/'
+      folder←path,'/',(name←⊃1↓⎕SI),'/'
       ⎕←'Clearing: ',folder
       :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
      
-      ⎕←'Creating: ',folder←path,'/',(name←'testdb1'),'/'
+      ⎕←'Creating: ',folder←path,'/',name,'/'
       columns←'col_'∘,¨types←#.vecdb.TypeNames
       assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FBC' ⍝ Types have been added?
       range←2*¯1+8×1 2 4 6 0.25
@@ -63,7 +64,6 @@
      
       :If LOG ⋄ ⎕←'Size of input data: ',fmtnum ⎕SIZE'data' ⋄ :EndIf
      
-      recs←numrecs(⌊÷)2
       (options←⎕NS'').BlockSize←numrecs(⌊×)0.6 ⍝ Provoke block overflow
       params←name folder columns types options(recs↑¨data)
       TEST←'Creating db & inserting ',(fmtnum recs),' records'
@@ -156,10 +156,10 @@
       z←'Sharding Tests Completed'
     ∇
 
-    ∇ z←test_basic;columns;types;folder;name;db;tnms;data;numrecs;recs;select;where;expect;indices;options;params;range;rcols;rcoli;newvals;i;t;vals;ix;maps;I1;Odd;allodd;sel;square;charvalues;charsmapped;zzz;OddC
+    ∇ z←test_basic;db;data;columns;numrecs;recs;TEST;select;where;expect;vals;indices;rcols;rcoli;types;ix;newvals;i;t
      ⍝ Create and delete some tables
      
-      numrecs←10000000 ⍝ 10 million records
+      (db data columns)←makeBasicDb (numrecs recs)←1 0.5×10000000 ⍝ 10 million records
       TEST←'Reading them back:'
       assert(recs↑¨data)≡db.Read time(⍳recs)columns
      
@@ -199,9 +199,35 @@
      
       TEST←'Two key, multiple data group by'
       expect←(↑[0.5]data[1 5]){⍺,(+/⍵[;1]),⌈/⍵[;2]}⌸↑[0.5]data[2 3]
-      assert expect≡db.Query time ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2),max(col_I4) group by col_I1,col_B'
+      assert expect≡db.Query time ⍬('sum col_I2' 'max col_I4')('col_I1' 'col_B') ⍝ select sum(col_I2),max(col_I4) group by col_I1,col_B'     
      
-      ⍝ Test calculated / mapped columns
+      ⍝ Test vecdb.Replace
+      indices←db.Query where ⍬
+      rcols←columns[rcoli←types⍳,¨'I2' 'B' 'C']
+      TEST←'Updating ',(fmtnum≢ix←2⊃,indices),' records'
+      newvals←0 1-(⊂ix)∘⌷¨data[2↑rcoli] ⍝ Update with 0-data or ~data
+      newvals,←⊂(≢ix)⍴⊂'changed'        ⍝ And new char values
+      assert 0=db.Update time indices rcols newvals
+      expect←data[rcoli]
+      :For i :In ⍳⍴rcoli
+          t←i⊃expect ⋄ t[ix]←i⊃newvals ⋄ (i⊃expect)←t
+      :EndFor
+      TEST←'Reading two columns for all ',(⍕numrecs),' records'
+      assert expect≡db.Read time(1,⍪⊂⍳numrecs)rcols
+     
+      :If LOG
+          ⎕←'Basic tests: memstats before db.Erase:'
+          ⎕←memstats 0 ⍝ Report
+      :EndIf
+     
+      TEST←'Deleting the db' ⋄  assert 0={db.Erase}time ⍬
+    ∇ 
+    
+    ∇test_calcmap;db;data;columns;numrecs;I1;Odd;OddC;charvalues;charsmapped;expect;allodd;square;sel
+      ⍝ Test calculated / mapped columns  
+      
+      (db data columns)←makeBasicDb numrecs←10000
+
       (I1 Odd)←{⍵(2|⍵)}∪1⊃data              ⍝ Mappings of I1 column (with values in range 0…127)
       OddC←('Even' 'Odd')[1+Odd]            ⍝ Odd in Char form
       db.AddCalc'OddI1' 'col_I1' 'B' 'map'(I1 Odd) ⍝ name source type calculation data
@@ -234,31 +260,9 @@
      
       db.RemoveCalc'OddI1'
       ⍝ /// More calc column QA required
-      ⍝ /// Do not allow calcs on character columns
-     
-      ⍝ Test vecdb.Replace
-      indices←db.Query where ⍬
-      rcols←columns[rcoli←types⍳,¨'I2' 'B' 'C']
-      TEST←'Updating ',(fmtnum≢ix←2⊃,indices),' records'
-      newvals←0 1-(⊂ix)∘⌷¨data[2↑rcoli] ⍝ Update with 0-data or ~data
-      newvals,←⊂(≢ix)⍴⊂'changed'        ⍝ And new char values
-      assert 0=db.Update time indices rcols newvals
-      expect←data[rcoli]
-      :For i :In ⍳⍴rcoli
-          t←i⊃expect ⋄ t[ix]←i⊃newvals ⋄ (i⊃expect)←t
-      :EndFor
-      TEST←'Reading two columns for all ',(⍕numrecs),' records'
-      assert expect≡db.Read time(1,⍪⊂⍳numrecs)rcols
-     
-      :If LOG
-          ⎕←'Basic tests: memstats before db.Erase:'
-          ⎕←memstats 0 ⍝ Report
-      :EndIf
-     
-      TEST←'Deleting the db'
-      assert 0={db.Erase}time ⍬
-     
-      z←'Creation Tests Completed'
+      ⍝ /// Do not allow calcs on character columns   
+
+      TEST←'Deleting the db' ⋄  assert 0={db.Erase}time ⍬
     ∇
 
     ∇ test_add_columns_in_sequence;name;folder;options;numrecs;columns;types;params;db;data

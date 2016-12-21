@@ -21,7 +21,7 @@
       tests←{⍵/⍨(⊂'test_')∊⍨5↑¨⍵}⎕NL-3 
       :If 0≠≢selection
          :If 1=≡selection ⋄ selection←,⊂selection ⋄ :EndIf
-         :If ∧/m←selection∊tests ⋄ tests←selection
+         :If ∧/m←selection∊5↓¨tests ⋄ tests←'test_'∘,¨selection
          :Else ⋄ ('tests not found: ',(~m)/selection) ⎕SIGNAL 11
          :EndIf
       :EndIf           
@@ -42,19 +42,19 @@
       :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
     ∇
     
-    ∇ (db data columns)←makeBasicDB numrecs;folder;name;range;types;tnms;recs;options;params;charvalues
+    ∇ (db data columns types)←makeBasicDB numrecs;folder;name;range;types;tnms;recs;options;params;charvalues
 
       memstats 1       ⍝ Clear memory statistics
-      (numrecs recs)←2↑numrecs,⌊numrecs÷2
+      (numrecs recs)←2↑numrecs,numrecs
       :If (100×numrecs)>2000⌶16                       
           ⎕←'*** Warning: workspace size should be at least: ',(⍕⌈(100×numrecs)÷1000000)',Mb ***'
       :EndIf
      
       folder←path,'/',(name←⊃1↓⎕SI),'/'
-      ⎕←'Clearing: ',folder
+      ⍝⎕←'Clearing: ',folder
       :Trap 22 ⋄ #.vecdb.Delete folder ⋄ :EndTrap
      
-      ⎕←'Creating: ',folder←path,'/',name,'/'
+      ⍝⎕←'Creating: ',folder←path,'/',name,'/'
       columns←'col_'∘,¨types←#.vecdb.TypeNames
       assert #.vecdb.TypeNames≡tnms←'I1' 'I2' 'I4',,¨'FBC' ⍝ Types have been added?
       range←2*¯1+8×1 2 4 6 0.25
@@ -159,7 +159,7 @@
     ∇ z←test_basic;db;data;columns;numrecs;recs;TEST;select;where;expect;vals;indices;rcols;rcoli;types;ix;newvals;i;t
      ⍝ Create and delete some tables
      
-      (db data columns)←makeBasicDb (numrecs recs)←1 0.5×10000000 ⍝ 10 million records
+      (db data columns types)←makeBasicDB (numrecs recs)←1 0.5×10000000 ⍝ 10 million records
       TEST←'Reading them back:'
       assert(recs↑¨data)≡db.Read time(⍳recs)columns
      
@@ -223,10 +223,12 @@
       TEST←'Deleting the db' ⋄  assert 0={db.Erase}time ⍬
     ∇ 
     
-    ∇test_calcmap;db;data;columns;numrecs;I1;Odd;OddC;charvalues;charsmapped;expect;allodd;square;sel
+    ∇test_calcmap;db;data;columns;numrecs;I1;Odd;OddC;charvalues;charsmapped;expect;allodd;square;sel;types;chardata
       ⍝ Test calculated / mapped columns  
       
-      (db data columns)←makeBasicDb numrecs←10000
+      numrecs←10000
+      (db data columns types)←makeBasicDB numrecs
+      charvalues←∪chardata← (types⍳⊂,'C')⊃data
 
       (I1 Odd)←{⍵(2|⍵)}∪1⊃data              ⍝ Mappings of I1 column (with values in range 0…127)
       OddC←('Even' 'Odd')[1+Odd]            ⍝ Odd in Char form
@@ -240,7 +242,7 @@
       assert charsmapped≡db.Calc'ThreeResC'charvalues
      
       TEST←'Select calculated column'
-      expect←({↓⍉(⍵∘.*1 2),2|⍵}1⊃data),(('Even' 'Odd')[1+2|1⊃data])(('zero' 'one' 'two')[1+3|¯1+charvalues⍳6⊃data])
+      expect←({↓⍉(⍵∘.*1 2),2|⍵}1⊃data),(('Even' 'Odd')[1+2|1⊃data])(('zero' 'one' 'two')[1+3|¯1+charvalues⍳chardata])
       assert expect≡db.Query time ⍬('col_I1' 'SquareI1' 'OddI1' 'OddI1C' 'ThreeResC') ⍝ select col_I1, SquareI1, OddI1 ThreeResC
      
       TEST←'Test query on calculated column with inverse'
@@ -298,7 +300,7 @@
       assert 0=db.Erase
     ∇
 
-    ∇ test_summary_fns;name;folder;options;columns;types;params;db;data;sort;comp
+    ∇ no_test_summary_fns;name;folder;options;columns;types;params;db;data;sort;comp
       name folder←preTest ⍬
      
       columns←'id' 'name' 'price' 'quantity'
@@ -363,11 +365,15 @@
     assert←{'Assertion failed'⎕SIGNAL(⍵=0)/11}
 
       time←{⍺←⊣ ⋄ t←⎕AI[3]
-          o←output TEST,' ... '
           z←⍺ ⍺⍺ ⍵
-          o←output(⍕⎕AI[3]-t),'ms',⎕UCS 10
-          z
-      }
+          z⊣timelog TEST (⎕AI[3]-t)
+      }                   
+      
+      ∇{info}←timelog info
+       :If 2=⎕NC 'TIMELOG'
+          TIMELOG⍪←info
+       :EndIf
+      ∇
 
       expecterror←{
           0::⎕SIGNAL(⍺≡⊃⎕DMX.DM)↓11

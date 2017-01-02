@@ -1,13 +1,13 @@
 # TODO #
 
-## Currently prioritised ##
+## Started (Jan 2nd 2017) ##
 
-List updated December 14th, 2016.
-
-1. Parallel queries (first pass done)
+1. Correct summaries for cross-shard calculations
+1. Add "average" and "count distict" calculations
 
 ## To be done soon ##
 
+1. Document server mode / parallel queries
 1. Generalization of Symbol Tables + Add One, Four & Eight Byte Symbol Tables
 1. Enhance queries to support conditional functions... Eg. ('price' '>' 100)('Name' 'like' 'A%')
 1. Beef up error checking on file creation

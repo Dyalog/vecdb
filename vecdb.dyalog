@@ -1,6 +1,6 @@
 ﻿:Class vecdb
 ⍝ Dyalog APL vector database - see https://github.com/Dyalog/vecdb
-
+             
     (⎕IO ⎕ML)←1 1
 
     :Section Constants
@@ -9,10 +9,11 @@
     ⍝ To come: C4=323 indexed chars
     ⍝          Tn=Fixed with text (no index table)
     :Field Public Shared TypeNums←83 163 323 645 11 163
-    :Field Public Shared SummaryFns←'sum' 'max' 'min' 'count'
+    :Field Public Shared SummaryFns   ←'sum' 'max' 'min' 'count' 'avg'         'occurs'
+    :Field Public Shared SummaryAPLFns←'+/'  '⌈/'  '⌊/'  '≢'     'summary_avg' 'summary_occurs'
+    :Field Public Shared ReSumAPLFns  ←'+/'  '⌈/'  '⌊/'  '+/'    'resum_avg'   'resum_occurs'
+    :Field Public Shared SummaryInfo  ←0     0     0     0       1             1 ⍝ Do summary functions need to return extra info?
     :Field Public Shared CalcFns←,⊂'map'
-    :Field Public Shared SummaryAPLFns←'+/' '⌈/' '⌊/' '≢'
-    :Field Public Shared ReSummaryAPLFns←'+/' '⌈/' '⌊/' '+/'
     :EndSection ⍝ Constants
 
     :Section Instance Fields            ⍝ The fact that these are public does not mean it is safe to change them
@@ -61,8 +62,6 @@
         ∇
     :EndProperty
     :EndSection ⍝ Properties
-
-    :EndSection
 
     ∇ Open(folder)
       :Implements constructor
@@ -608,7 +607,7 @@
           :If 1=≡groupby ⋄ groupby←,⊂groupby ⋄ :EndIf ⍝ Enclose if simple
           m←(0≠≢¨summary)∨cols∊groupby ⍝ summary or one of the grouping cols?
           'ONLY SUMMARIZED COLUMNS MAY BE SELECTED WHEN GROUPING'⎕SIGNAL(∧/m)↓11
-      :EndIf
+      :EndIf               
      
       r←0 2⍴0 ⍝ (shard indices)
      

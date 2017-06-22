@@ -3,7 +3,8 @@
     ⍝ Updated to version 0.2.5 with mapped columns
     ⍝ Call TestVecdb.RunAll to run a full system test
     ⍝   assumes vecdb is loaded in #.vecdb
-    ⍝   returns memory usage statistics (result of "memstats 0")
+    ⍝   returns memory usage statistics (result of "memstats 0")        
+    ⍝ Morten was here too
 
     (⎕IO ⎕ML)←1 1
 

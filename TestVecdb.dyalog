@@ -1,10 +1,9 @@
 ﻿:Namespace TestVecdb
 
-    ⍝ Updated to version 0.2.5 with mapped columns
-    ⍝ Call TestVecdb.RunAll to run a full system test
+    ⍝ Updated to version 0.2.6 with mapped columns
+    ⍝ Call TestVecdb.Run '' to run all tests
     ⍝   assumes vecdb is loaded in #.vecdb
     ⍝   returns memory usage statistics (result of "memstats 0")        
-    ⍝ Morten was here too
 
     (⎕IO ⎕ML)←1 1
 

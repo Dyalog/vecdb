@@ -62,10 +62,8 @@
     :EndProperty
     :EndSection ⍝ Properties
 
-    :EndSection
-
     ∇ Open(folder)
-      :Implements constructor
+      :Implements Constructor
       :Access Public
      
       OpenFull(folder ⍬) ⍝ Open all shards
@@ -293,21 +291,21 @@
     ∇
 
     ∇ make4(name folder columns types)
-      :Implements constructor
+      :Implements Constructor
       :Access Public
       0 CreateOrExtend name folder columns types'' '' ⍝ No data or option
       Open,⊂folder      ⍝ now open it properly
     ∇
 
     ∇ make5(name folder columns types options)
-      :Implements constructor
+      :Implements Constructor
       :Access Public
       0 CreateOrExtend name folder columns types options'' ⍝ No data or option
       Open,⊂folder      ⍝ now open it properly
     ∇
 
     ∇ make6(name folder columns types options data)
-      :Implements constructor
+      :Implements Constructor
       :Access Public
       0 CreateOrExtend name folder columns types options data
       Open,⊂folder      ⍝ now open it properly
@@ -335,7 +333,7 @@
               ('"',metafile,'" already exists')⎕SIGNAL(Exists metafile)/11
           :Else ⍝ Folder does not exist
               :Trap 0 ⋄ MkDir ¯1↓folder
-              :Else ⋄ ⎕DMX.Message ⎕SIGNAL ⎕DMX.EN
+              :Else ⋄ ⎕DMX.EM ⎕SIGNAL ⎕DMX.EN
               :EndTrap
           :EndIf
           ProcessOptions options ⍝ Sets global fields
@@ -1028,3 +1026,4 @@
     :EndSection ⍝ Files
 
 :EndClass
+⍝)(!Delete!!0 0 0 0 0 0 0!0
